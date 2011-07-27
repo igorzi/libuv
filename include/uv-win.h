@@ -159,6 +159,22 @@ typedef struct uv_buf_t {
   int retcode;
 
 #define UV_PROCESS_PRIVATE_FIELDS         \
+  int pid_;                               \
+  int exit_signal_;                       \
+  wchar_t *application_;                  \
+  wchar_t *arguments_;                    \
+  wchar_t *env_win_;                      \
+  wchar_t *cwd_;                          \
+  const wchar_t *path_;                   \
+  const wchar_t *path_ext_;               \
+  HANDLE stdio_handles_[3];               \
+  int got_custom_fds_[3];                 \
+  CRITICAL_SECTION info_lock_;            \
+  int did_start_;                         \
+  int kill_me_;                           \
+  HANDLE wait_handle_;                    \
+  HANDLE process_handle_;                 \
+  uv_async_t watcher;
 
 int uv_utf16_to_utf8(wchar_t* utf16Buffer, size_t utf16Size, char* utf8Buffer, size_t utf8Size);
 int uv_utf8_to_utf16(const char* utf8Buffer, wchar_t* utf16Buffer, size_t utf16Size);
