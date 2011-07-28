@@ -24,6 +24,7 @@
 #include "internal.h"
 
 #include <assert.h>
+#include <stdlib.h>
 #include <windows.h>
 
 
@@ -321,6 +322,117 @@ static wchar_t* search_path(const wchar_t *file,
 }
 
 
+/* Returns the size in words of `src` converted
+ * from UTF-8 to wchar_t, or (size_t)-1 on error.
+ *
+ * Note that the returned value is in words. Multiply
+ * it with sizeof(wchar_t) to obtain the byte length.
+ *
+ * Also note that the returned value does not include
+ * space for the trailing nul byte.
+ */
+static size_t utf8_to_wchar_len(const char* src) {
+  size_t size;
+  int error;
+
+  if ((error = mbstowcs_s(&size, NULL, 0, src, 0)) != 0) {
+    assert(0);
+    return (size_t) -1;
+  }
+  else {
+    assert(size != 0);
+    return size - 1; /* Subtract nul byte. */
+  }
+}
+
+
+/* Convert UTF-8 string to wchar_t. The returned buffer
+ * is null terminated and should be freed by the caller.
+ * Returns NULL on error (bad input, out of memory).
+ */
+static wchar_t* utf8_to_wchar(const char* src) {
+  wchar_t* dst;
+  size_t size;
+  int error;
+
+  if ((size = utf8_to_wchar_len(src)) == (size_t) -1) {
+    assert(0);
+    return NULL;
+  }
+
+  if ((dst = malloc((size + 1) * sizeof(wchar_t))) == NULL) {
+    assert(0);
+    return NULL;
+  }
+
+  if ((error = mbstowcs_s(NULL, dst, size + 1, src, size)) != 0) {
+    assert(0);
+    free(dst);
+    return NULL;
+  }
+
+  return dst;
+}
+
+
+static wchar_t* make_program_args(char* const* args) {
+  wchar_t* dst;
+  wchar_t* end;
+  wchar_t* ptr;
+  size_t size;
+  size_t len;
+  int error;
+  int i;
+
+  dst = NULL;
+
+  /* Combine arguments into a single wchar_t string. Calculate length first. */
+  size = 0;
+  for (i = 0; args[i] != NULL; i++) {
+    if ((len = utf8_to_wchar_len(args[i])) == (size_t) -1) {
+      assert(0);
+      goto err;
+    }
+    else {
+      size += len;
+    }
+  }
+
+  /* Assume all characters need escaping. */
+  size *= 2;
+
+  /* Arguments are separated with a space. */
+  if (i > 0) {
+    size += i - 1;
+  }
+
+  if ((dst = malloc((size + 1) * sizeof(wchar_t))) == NULL) {
+    goto err;
+  }
+
+  ptr = dst;
+  end = dst + size;
+
+  for (i = 0; args[i] != NULL; i++) {
+    assert(ptr + size < end);
+    if ((error = mbstowcs_s(&len, ptr, size + 1, args[i], size)) != 0) {
+      assert(0);
+      goto err;
+    }
+    else {
+      size -= len;
+      ptr += len;
+    }
+  }
+
+  return dst;
+
+err:
+  free(dst);
+  return NULL;
+}
+
+
 int uv_spawn(uv_process_t* process, uv_process_options_t options) {
   memset(process, 0, sizeof *process);
 
@@ -328,6 +440,10 @@ int uv_spawn(uv_process_t* process, uv_process_options_t options) {
   process->kill_me_ = 0;
   process->did_start_ = 0;
   process->exit_signal_ = 0;
+
+  process->application_ = utf8_to_wchar(options.file);
+  process->arguments_ = make_program_args(options.args);
+  process->cwd_ = utf8_to_wchar(options.cwd);
 
   if (options.stdin_stream) {
     uv_pipe_init(options.stdin_stream);
@@ -340,6 +456,12 @@ int uv_spawn(uv_process_t* process, uv_process_options_t options) {
   }
 
   return 0;
+
+err:
+  free(process->application_);
+  free(process->arguments_);
+  free(process->cwd_);
+  return -1;
 }
 
 
