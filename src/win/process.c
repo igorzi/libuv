@@ -23,13 +23,53 @@
 #include "../uv-common.h"
 #include "internal.h"
 
+#include <stdio.h>
 #include <assert.h>
 #include <stdlib.h>
 #include <windows.h>
 
+#define UTF8_TO_UTF16(s, t)                               \
+  size = uv_utf8_to_utf16(s, NULL, 0) * sizeof(wchar_t);  \
+  t = (wchar_t*)malloc(size);                             \
+  if (!t) {                                               \
+    uv_fatal_error(ERROR_OUTOFMEMORY, "malloc");          \
+  }                                                       \
+  if (!uv_utf8_to_utf16(s, t, size / sizeof(wchar_t))) {  \
+    uv_set_sys_error(GetLastError());                     \
+    goto error;                                           \
+  }
+
 
 static const wchar_t DEFAULT_PATH[1] = L"";
 static const wchar_t DEFAULT_PATH_EXT[20] = L".COM;.EXE;.BAT;.CMD";
+
+static int uv_process_init(uv_process_t* handle) {
+  handle->type = UV_PROCESS;
+  handle->flags = 0;
+  handle->error = uv_ok_;
+  handle->exit_cb = NULL;
+  handle->pid = 0;
+  handle->exit_signal = 0;
+  handle->wait_handle = INVALID_HANDLE_VALUE;
+  handle->process_handle = INVALID_HANDLE_VALUE;
+  handle->stdio_pipes[0].server_pipe = NULL;
+  handle->stdio_pipes[0].child_pipe = INVALID_HANDLE_VALUE;
+  handle->stdio_pipes[1].server_pipe = NULL;
+  handle->stdio_pipes[1].child_pipe = INVALID_HANDLE_VALUE;
+  handle->stdio_pipes[2].server_pipe = NULL;
+  handle->stdio_pipes[2].child_pipe = INVALID_HANDLE_VALUE;
+
+  uv_req_init((uv_req_t*)&handle->exit_req);
+  handle->exit_req.type = UV_PROCESS_EXIT;
+  handle->exit_req.data = handle;
+
+  uv_counters()->handle_init++;
+  uv_counters()->process_init++;
+
+  uv_ref();
+
+  return 0;
+}
 
 
 static struct watcher_status_struct {
@@ -55,6 +95,7 @@ static wchar_t* search_path_join_test(const wchar_t* dir,
                                       const wchar_t* cwd,
                                       int cwd_len) {
   wchar_t *result, *result_pos;
+  DWORD attrs;
 
   if (dir_len >= 1 && (dir[0] == L'/' || dir[0] == L'\\')) {
     /* It's a full path without drive letter, use cwd's drive letter only */
@@ -80,7 +121,7 @@ static wchar_t* search_path_join_test(const wchar_t* dir,
 
   /* Allocate buffer for output */
   result = result_pos =
-      malloc(sizeof(wchar_t) * (cwd_len + 1 + dir_len + 1 + name_len + 1 + ext_len + 1));
+      (wchar_t*)malloc(sizeof(wchar_t) * (cwd_len + 1 + dir_len + 1 + name_len + 1 + ext_len + 1));
 
   /* Copy cwd */
   wcsncpy(result_pos, cwd, cwd_len);
@@ -117,7 +158,7 @@ static wchar_t* search_path_join_test(const wchar_t* dir,
   /* Null terminator */
   result_pos[0] = L'\0';
 
-  DWORD attrs = GetFileAttributesW(result);
+  attrs = GetFileAttributesW(result);
 
   if (attrs != INVALID_FILE_ATTRIBUTES &&
      !(attrs & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))) {
@@ -241,7 +282,11 @@ static wchar_t* search_path(const wchar_t *file,
                             wchar_t *cwd,
                             const wchar_t *path,
                             const wchar_t *path_ext) {
+  int file_has_dir;
   wchar_t* result = NULL;
+  wchar_t *file_name_start;
+  wchar_t *dot;
+  int name_has_ext;
 
   int file_len = wcslen(file);
   int cwd_len = wcslen(cwd);
@@ -255,7 +300,6 @@ static wchar_t* search_path(const wchar_t *file,
   }
 
   /* Find the start of the filename so we can split the directory from the name */
-  wchar_t *file_name_start;
   for (file_name_start = (wchar_t*)file + file_len;
        file_name_start > file
            && file_name_start[-1] != L'\\'
@@ -263,11 +307,11 @@ static wchar_t* search_path(const wchar_t *file,
            && file_name_start[-1] != L':';
        file_name_start--);
 
-  int file_has_dir = file_name_start != file;
+  file_has_dir = file_name_start != file;
 
   /* Check if the filename includes an extension */
-  wchar_t *dot = wcschr(file_name_start, L'.');
-  int name_has_ext = (dot != NULL && dot[1] != L'\0');
+  dot = wcschr(file_name_start, L'.');
+  name_has_ext = (dot != NULL && dot[1] != L'\0');
 
   if (file_has_dir) {
     /* The file has a path inside, don't use path (but do use path_ex) */
@@ -322,165 +366,317 @@ static wchar_t* search_path(const wchar_t *file,
 }
 
 
-/* Returns the size in words of `src` converted
- * from UTF-8 to wchar_t, or (size_t)-1 on error.
- *
- * Note that the returned value is in words. Multiply
- * it with sizeof(wchar_t) to obtain the byte length.
- *
- * Also note that the returned value does not include
- * space for the trailing nul byte.
- */
-static size_t utf8_to_wchar_len(const char* src) {
-  size_t size;
-  int error;
-
-  if ((error = mbstowcs_s(&size, NULL, 0, src, 0)) != 0) {
-    assert(0);
-    return (size_t) -1;
-  }
-  else {
-    assert(size != 0);
-    return size - 1; /* Subtract nul byte. */
-  }
-}
-
-
-/* Convert UTF-8 string to wchar_t. The returned buffer
- * is null terminated and should be freed by the caller.
- * Returns NULL on error (bad input, out of memory).
- */
-static wchar_t* utf8_to_wchar(const char* src) {
-  wchar_t* dst;
-  size_t size;
-  int error;
-
-  if ((size = utf8_to_wchar_len(src)) == (size_t) -1) {
-    assert(0);
-    return NULL;
-  }
-
-  if ((dst = malloc((size + 1) * sizeof(wchar_t))) == NULL) {
-    assert(0);
-    return NULL;
-  }
-
-  if ((error = mbstowcs_s(NULL, dst, size + 1, src, size)) != 0) {
-    assert(0);
-    free(dst);
-    return NULL;
-  }
-
-  return dst;
-}
-
-
 static wchar_t* make_program_args(char* const* args) {
   wchar_t* dst;
-  wchar_t* end;
   wchar_t* ptr;
-  size_t size;
+  char* const* arg = args;
+  size_t size = 0;
   size_t len;
-  int error;
-  int i;
+  int i = 0;
 
   dst = NULL;
 
-  /* Combine arguments into a single wchar_t string. Calculate length first. */
-  size = 0;
-  for (i = 0; args[i] != NULL; i++) {
-    if ((len = utf8_to_wchar_len(args[i])) == (size_t) -1) {
-      assert(0);
-      goto err;
-    }
-    else {
-      size += len;
-    }
+  while (*arg) {
+    size += (uv_utf8_to_utf16(*arg, NULL, 0) * sizeof(wchar_t));
+    i++;
+    arg++;
   }
-
-  /* Assume all characters need escaping. */
-  size *= 2;
 
   /* Arguments are separated with a space. */
   if (i > 0) {
     size += i - 1;
   }
 
-  if ((dst = malloc((size + 1) * sizeof(wchar_t))) == NULL) {
-    goto err;
+  dst = (wchar_t*)malloc(size);
+  if (!dst) {
+    // TODO: FATAL
   }
 
   ptr = dst;
-  end = dst + size;
 
-  for (i = 0; args[i] != NULL; i++) {
-    assert(ptr + size < end);
-    if ((error = mbstowcs_s(&len, ptr, size + 1, args[i], size)) != 0) {
-      assert(0);
-      goto err;
+  arg = args;
+  while (*arg) {
+    len = uv_utf8_to_utf16(*arg, ptr, (size_t)(size - (ptr - dst)));
+    if (!len) {
+      free(dst);
+      return NULL;
     }
-    else {
-      size -= len;
-      ptr += len;
+
+    arg++;
+    ptr += len;
+    *(ptr - 1) = L' ';
+  }
+
+  *(ptr - 1) = L'\0';
+
+  return dst;
+}
+
+/*
+  * The way windows takes environment variables is different than what C does;
+  * Windows wants a contiguous block of null-terminated strings, terminated
+  * with an additional null.
+  * Get a pointer to the pathext and path environment variables as well,
+  * because search_path needs it. These are just pointers into env_win.
+  */
+wchar_t* make_program_env(char* const* envBlock, const wchar_t **path,  const wchar_t **path_ext) {
+  char* const* env = envBlock;
+  int env_win_len = 1 * sizeof(wchar_t); // room for closing null
+  int len;
+  wchar_t* env_win, *env_win_pos;
+
+  while (*env) {
+    env_win_len += (uv_utf8_to_utf16(*env, NULL, 0) * sizeof(wchar_t));
+    env++;
+  }
+
+  env_win = (wchar_t*)malloc(env_win_len);
+  if (!env_win) {
+    // TODO: FATAL
+  }
+
+  env_win_pos = env_win;
+
+  env = envBlock;
+  while (*env) {
+    len = uv_utf8_to_utf16(*env, env_win_pos, (size_t)(env_win_len - (env_win_pos - env_win)));
+    if (!len) {
+      free(env_win);
+      return NULL;
+    }
+
+    // Try to get a pointer to PATH and PATHEXT
+    if (_wcsnicmp(L"PATH=", env_win_pos, 5) == 0) {
+      *path = env_win_pos + 5;
+    }
+    if (_wcsnicmp(L"PATHEXT=", env_win_pos, 8) == 0) {
+      *path_ext = env_win_pos + 8;
+    }
+
+    env++;
+    env_win_pos += len;
+  }
+
+  *env_win_pos = L'\0';
+  return env_win;
+}
+
+
+static void CALLBACK watch_wait_callback(void* data, BOOLEAN didTimeout) {
+  uv_process_t* process = (uv_process_t*)data;
+  
+  assert(didTimeout == FALSE);
+  assert(process);
+  
+  memset(&process->exit_req.overlapped, 0, sizeof(process->exit_req.overlapped));
+
+  /* Post completed */
+  if (!PostQueuedCompletionStatus(LOOP->iocp,
+                                0,
+                                0,
+                                &process->exit_req.overlapped)) {
+    uv_fatal_error(GetLastError(), "PostQueuedCompletionStatus");
+  }
+}
+
+
+void uv_process_proc_exit(uv_process_t* handle, uv_req_t* req) {
+  int i;
+  DWORD exit_code;
+
+  /* Close stdio handles. */
+  for (i = 0; i < COUNTOF(handle->stdio_pipes); i++) {
+    if (handle->stdio_pipes[i].server_pipe != NULL) {
+      close_pipe(handle->stdio_pipes[i].server_pipe, NULL, NULL);
+      handle->stdio_pipes[i].server_pipe = NULL;
+    }
+
+    if (handle->stdio_pipes[i].child_pipe != INVALID_HANDLE_VALUE) {
+      CloseHandle(handle->stdio_pipes[i].child_pipe);
+      handle->stdio_pipes[i].child_pipe = INVALID_HANDLE_VALUE;
     }
   }
 
-  return dst;
+  /* Unregister from process notification. */
+  UnregisterWait(handle->wait_handle);
 
-err:
-  free(dst);
-  return NULL;
+  /* Get the exit code. */
+  if (!GetExitCodeProcess(handle->process_handle, &exit_code)) {
+    // TODO: fatal error
+  }
+
+  /* Clean-up the process handle. */
+  CloseHandle(handle->process_handle);
+  handle->process_handle = INVALID_HANDLE_VALUE;
+
+  /* Fire the exit callback. */
+  handle->exit_cb(handle, exit_code, handle->exit_signal);
 }
 
 
 int uv_spawn(uv_process_t* process, uv_process_options_t options) {
-  memset(process, 0, sizeof *process);
+  int size;
+  wchar_t* application_path;
+  char name[64];
+  BOOL success;
+  wchar_t* application, *arguments, *env, *cwd;
+  const wchar_t* path = NULL;
+  const wchar_t* path_ext = NULL;
 
-  InitializeCriticalSection(&process->info_lock_);
-  process->kill_me_ = 0;
-  process->did_start_ = 0;
-  process->exit_signal_ = 0;
+  SECURITY_ATTRIBUTES sa; 
+  STARTUPINFOW startup;
+  PROCESS_INFORMATION info;
+ 
+  memset(process, 0, sizeof(uv_process_t)); 
+  uv_process_init(process);
 
-  process->application_ = utf8_to_wchar(options.file);
-  process->arguments_ = make_program_args(options.args);
-  process->cwd_ = utf8_to_wchar(options.cwd);
+  process->exit_cb = options.exit_cb;
 
+  UTF8_TO_UTF16(options.file, application);
+
+  if (options.cwd) {
+    UTF8_TO_UTF16(options.cwd, cwd);
+  } else {
+    size  = GetCurrentDirectoryW(0, NULL) * sizeof(wchar_t);
+    if (!size) {
+      // TODO: error
+    } else {
+      cwd = (wchar_t*)malloc(size);
+      GetCurrentDirectoryW(size, cwd);
+    }
+  }
+
+  if (options.args) {
+    arguments = make_program_args(options.args);
+  } else {
+    arguments = NULL;
+  }
+
+  if (options.env) {
+    env = make_program_env(options.env, &path, &path_ext);
+  } else {
+    env = NULL;
+  }
+
+  application_path = search_path(application, 
+                                 cwd,
+                                 path ? path : DEFAULT_PATH,
+                                 path_ext ? path_ext : DEFAULT_PATH_EXT);
+
+  if (!application_path) {
+    goto error;
+  }
+
+  sa.nLength = sizeof(SECURITY_ATTRIBUTES); 
+  sa.bInheritHandle = TRUE; 
+  sa.lpSecurityDescriptor = NULL; 
+
+  /* Create pipes */
   if (options.stdin_stream) {
-    uv_pipe_init(options.stdin_stream);
+    // TODO: check for errors
+    uv_stdio_pipe_server(options.stdin_stream, PIPE_ACCESS_OUTBOUND, name, sizeof(name));
+    process->stdio_pipes[0].server_pipe = options.stdin_stream;
+
+    /* Create client pipe handle */
+    process->stdio_pipes[0].child_pipe = CreateFileA(name,
+                                                     GENERIC_READ,
+                                                     0,
+                                                     &sa,
+                                                     OPEN_EXISTING,
+                                                     0,
+                                                     NULL);
+
+    // TODO: check for errors
   }
   if (options.stdout_stream) {
-    uv_pipe_init(options.stdout_stream);
+    uv_stdio_pipe_server(options.stdout_stream, PIPE_ACCESS_INBOUND, name, sizeof(name));
+    process->stdio_pipes[1].server_pipe = options.stdout_stream;
+
+    /* Create client pipe handle */
+    process->stdio_pipes[1].child_pipe = CreateFileA(name,
+                                                     GENERIC_WRITE,
+                                                     0,
+                                                     &sa,
+                                                     OPEN_EXISTING,
+                                                     0,
+                                                     NULL);
+
+    // TODO: check for errors
   }
   if (options.stderr_stream) {
-    uv_pipe_init(options.stderr_stream);
+    uv_stdio_pipe_server(options.stderr_stream, PIPE_ACCESS_INBOUND, name, sizeof(name));
+    process->stdio_pipes[2].server_pipe = options.stderr_stream;
+
+    /* Create client pipe handle */
+    process->stdio_pipes[2].child_pipe = CreateFileA(name,
+                                                     GENERIC_WRITE,
+                                                     0,
+                                                     &sa,
+                                                     OPEN_EXISTING,
+                                                     0,
+                                                     NULL);
   }
+
+  startup.cb = sizeof(startup);
+  startup.lpReserved = NULL;
+  startup.lpDesktop = NULL;
+  startup.lpTitle = NULL;
+  startup.dwFlags = STARTF_USESTDHANDLES;
+  startup.cbReserved2 = 0;
+  startup.lpReserved2 = NULL;
+  startup.hStdInput = process->stdio_pipes[0].child_pipe;
+  startup.hStdOutput = process->stdio_pipes[1].child_pipe;
+  startup.hStdError = process->stdio_pipes[2].child_pipe;
+
+  success = CreateProcessW(
+    application_path,
+    arguments,
+    NULL,
+    NULL,
+    1,
+    CREATE_UNICODE_ENVIRONMENT,
+    env,
+    cwd,
+    &startup,
+    &info
+  );
+
+  if (!success) {
+    goto error;
+  }
+
+  process->process_handle = info.hProcess;
+  process->pid = info.dwProcessId;
+  
+  /* Get a notification when the child process exits. */
+  RegisterWaitForSingleObject(&process->wait_handle, process->process_handle,
+      watch_wait_callback, (void*)process, INFINITE,
+      WT_EXECUTEINWAITTHREAD | WT_EXECUTEONLYONCE);
+
+  // TODO: handle error
+
+  CloseHandle(info.hThread);
 
   return 0;
 
-err:
-  free(process->application_);
-  free(process->arguments_);
-  free(process->cwd_);
+error:
+  // TODO: free these unconditionally
+  free(application);
+  free(arguments);
+  free(cwd);
+  free(env);
   return -1;
 }
 
 
 int uv_process_kill(uv_process_t* process, int signum) {
-  int rv = 0;
+  process->exit_signal = signum;
 
-  EnterCriticalSection(&process->info_lock_);
-
-  process->exit_signal_ = signum;
-
-  if (process->did_start_) {
-    /* On windows killed processes normally return 1 */
-    if (!TerminateProcess(process->process_handle_, 1))
-      rv = -1;
-  } else {
-    process->kill_me_ = 1;
+  /* On windows killed processes normally return 1 */
+  if (process->process_handle != INVALID_HANDLE_VALUE &&
+      TerminateProcess(process->process_handle, 1)) {
+      return 0;
   }
 
-  LeaveCriticalSection(&process->info_lock_);
-
-  return rv;
+  return -1;
 }

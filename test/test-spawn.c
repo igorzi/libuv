@@ -111,6 +111,8 @@ TEST_IMPL(spawn_stdout) {
   int r;
   uv_pipe_t out;
 
+  MessageBoxA(NULL, "client", "client", 0);
+
   uv_init();
 
   init_process_options("spawn_helper2");
@@ -128,6 +130,13 @@ TEST_IMPL(spawn_stdout) {
   ASSERT(exit_cb_called == 1);
   ASSERT(close_cb_called == 2); /* Once for process once for the pipe. */
   ASSERT(strcmp("hello world\n", output) == 0);
+
+  return 0;
+}
+
+
+TEST_IMPL(spawn_stdin) {
+  ASSERT(0);
 
   return 0;
 }

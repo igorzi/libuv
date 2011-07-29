@@ -104,6 +104,7 @@ extern uv_loop_t uv_main_loop_;
 #define UV_HANDLE_READ_PENDING     0x8000
 #define UV_HANDLE_GIVEN_OS_HANDLE  0x10000
 #define UV_HANDLE_UV_ALLOCED       0x20000
+#define UV_HANDLE_STDIO_PIPE       0x40000
 
 void uv_want_endgame(uv_handle_t* handle);
 void uv_process_endgames();
@@ -163,6 +164,7 @@ void uv_process_tcp_connect_req(uv_tcp_t* handle, uv_connect_t* req);
  * Pipes
  */
 int uv_pipe_init_with_handle(uv_pipe_t* handle, HANDLE pipeHandle);
+int uv_stdio_pipe_server(uv_pipe_t* handle, DWORD access, char* name, size_t nameSize);
 void close_pipe(uv_pipe_t* handle, int* status, uv_err_t* err);
 void uv_pipe_endgame(uv_pipe_t* handle);
 
@@ -194,6 +196,12 @@ void uv_idle_invoke();
 void uv_async_endgame(uv_async_t* handle);
 
 void uv_process_async_wakeup_req(uv_async_t* handle, uv_req_t* req);
+
+
+/*
+ * Spawn
+ */
+void uv_process_proc_exit(uv_process_t* handle, uv_req_t* req);
 
 
 /*

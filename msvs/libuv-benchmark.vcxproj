@@ -158,11 +158,6 @@
     <ClInclude Include="..\test\runner.h" />
     <ClInclude Include="..\test\task.h" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="libuv.vcxproj">
-      <Project>{301fe650-cd34-14e5-6b63-42e383fa02bc}</Project>
-    </ProjectReference>
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

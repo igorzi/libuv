@@ -162,7 +162,8 @@ typedef enum {
   /* TODO: remove the req suffix */
   UV_ARES_EVENT_REQ,
   UV_ARES_CLEANUP_REQ,
-  UV_GETADDRINFO_REQ
+  UV_GETADDRINFO_REQ,
+  UV_PROCESS_EXIT
 } uv_req_type;
 
 

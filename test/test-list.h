@@ -65,85 +65,87 @@ TEST_DECLARE   (fail_always)
 TEST_DECLARE   (pass_always)
 TEST_DECLARE   (spawn_exit_code)
 TEST_DECLARE   (spawn_stdout)
+TEST_DECLARE   (spawn_stdin)
 HELPER_DECLARE (tcp4_echo_server)
 HELPER_DECLARE (tcp6_echo_server)
 HELPER_DECLARE (pipe_echo_server)
 
 
 TASK_LIST_START
-  TEST_ENTRY  (tcp_ping_pong)
-  TEST_HELPER (tcp_ping_pong, tcp4_echo_server)
+  //TEST_ENTRY  (tcp_ping_pong)
+  //TEST_HELPER (tcp_ping_pong, tcp4_echo_server)
 
-  TEST_ENTRY  (tcp_ping_pong_v6)
-  TEST_HELPER (tcp_ping_pong_v6, tcp6_echo_server)
+  //TEST_ENTRY  (tcp_ping_pong_v6)
+  //TEST_HELPER (tcp_ping_pong_v6, tcp6_echo_server)
 
-  TEST_ENTRY  (pipe_ping_pong)
-  TEST_HELPER (pipe_ping_pong, pipe_echo_server)
+  //TEST_ENTRY  (pipe_ping_pong)
+  //TEST_HELPER (pipe_ping_pong, pipe_echo_server)
 
-  TEST_ENTRY  (delayed_accept)
+  //TEST_ENTRY  (delayed_accept)
 
-  TEST_ENTRY  (tcp_writealot)
-  TEST_HELPER (tcp_writealot, tcp4_echo_server)
+  //TEST_ENTRY  (tcp_writealot)
+  //TEST_HELPER (tcp_writealot, tcp4_echo_server)
 
-  TEST_ENTRY  (tcp_bind_error_addrinuse)
-  TEST_ENTRY  (tcp_bind_error_addrnotavail_1)
-  TEST_ENTRY  (tcp_bind_error_addrnotavail_2)
-  TEST_ENTRY  (tcp_bind_error_fault)
-  TEST_ENTRY  (tcp_bind_error_inval)
-  TEST_ENTRY  (tcp_bind_localhost_ok)
-  TEST_ENTRY  (tcp_listen_without_bind)
+  //TEST_ENTRY  (tcp_bind_error_addrinuse)
+  //TEST_ENTRY  (tcp_bind_error_addrnotavail_1)
+  //TEST_ENTRY  (tcp_bind_error_addrnotavail_2)
+  //TEST_ENTRY  (tcp_bind_error_fault)
+  //TEST_ENTRY  (tcp_bind_error_inval)
+  //TEST_ENTRY  (tcp_bind_localhost_ok)
+  //TEST_ENTRY  (tcp_listen_without_bind)
 
-  TEST_ENTRY  (tcp_bind6_error_addrinuse)
-  TEST_ENTRY  (tcp_bind6_error_addrnotavail)
-  TEST_ENTRY  (tcp_bind6_error_fault)
-  TEST_ENTRY  (tcp_bind6_error_inval)
-  TEST_ENTRY  (tcp_bind6_localhost_ok)
+  //TEST_ENTRY  (tcp_bind6_error_addrinuse)
+  //TEST_ENTRY  (tcp_bind6_error_addrnotavail)
+  //TEST_ENTRY  (tcp_bind6_error_fault)
+  //TEST_ENTRY  (tcp_bind6_error_inval)
+  //TEST_ENTRY  (tcp_bind6_localhost_ok)
 
-  TEST_ENTRY  (pipe_bind_error_addrinuse)
-  TEST_ENTRY  (pipe_bind_error_addrnotavail)
-  TEST_ENTRY  (pipe_bind_error_inval)
-  TEST_ENTRY  (pipe_listen_without_bind)
+  //TEST_ENTRY  (pipe_bind_error_addrinuse)
+  //TEST_ENTRY  (pipe_bind_error_addrnotavail)
+  //TEST_ENTRY  (pipe_bind_error_inval)
+  //TEST_ENTRY  (pipe_listen_without_bind)
 
-  TEST_ENTRY  (connection_fail)
-  TEST_ENTRY  (connection_fail_doesnt_auto_close)
+  //TEST_ENTRY  (connection_fail)
+  //TEST_ENTRY  (connection_fail_doesnt_auto_close)
 
-  TEST_ENTRY  (shutdown_eof)
-  TEST_HELPER (shutdown_eof, tcp4_echo_server)
+  //TEST_ENTRY  (shutdown_eof)
+  //TEST_HELPER (shutdown_eof, tcp4_echo_server)
 
-  TEST_ENTRY  (callback_stack)
-  TEST_HELPER (callback_stack, tcp4_echo_server)
+  //TEST_ENTRY  (callback_stack)
+  //TEST_HELPER (callback_stack, tcp4_echo_server)
 
-  TEST_ENTRY  (timer)
+  //TEST_ENTRY  (timer)
 
-  TEST_ENTRY  (timer_again)
+  //TEST_ENTRY  (timer_again)
 
-  TEST_ENTRY  (idle_starvation)
+  //TEST_ENTRY  (idle_starvation)
 
-  TEST_ENTRY  (ref)
-  TEST_ENTRY  (idle_ref)
-  TEST_ENTRY  (async_ref)
-  TEST_ENTRY  (prepare_ref)
-  TEST_ENTRY  (check_ref)
-  TEST_ENTRY  (unref_in_prepare_cb)
+  //TEST_ENTRY  (ref)
+  //TEST_ENTRY  (idle_ref)
+  //TEST_ENTRY  (async_ref)
+  //TEST_ENTRY  (prepare_ref)
+  //TEST_ENTRY  (check_ref)
+  //TEST_ENTRY  (unref_in_prepare_cb)
 
-  TEST_ENTRY  (loop_handles)
+  //TEST_ENTRY  (loop_handles)
 
-  TEST_ENTRY  (async)
+  //TEST_ENTRY  (async)
 
-  TEST_ENTRY  (get_currentexe)
+  //TEST_ENTRY  (get_currentexe)
 
-  TEST_ENTRY  (hrtime)
+  //TEST_ENTRY  (hrtime)
 
-  TEST_ENTRY  (getaddrinfo_basic)
-  TEST_ENTRY  (getaddrinfo_concurrent)
+  //TEST_ENTRY  (getaddrinfo_basic)
+  //TEST_ENTRY  (getaddrinfo_concurrent)
 
-  TEST_ENTRY  (gethostbyname)
-  TEST_HELPER (gethostbyname, tcp4_echo_server)
+  //TEST_ENTRY  (gethostbyname)
+  //TEST_HELPER (gethostbyname, tcp4_echo_server)
 
-  TEST_ENTRY  (getsockname)
+  //TEST_ENTRY  (getsockname)
 
-  TEST_ENTRY  (spawn_exit_code)
+  //TEST_ENTRY  (spawn_exit_code)
   TEST_ENTRY  (spawn_stdout)
+  //TEST_ENTRY  (spawn_stdin)
 
 #if 0
   /* These are for testing the test runner. */
