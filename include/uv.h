@@ -58,6 +58,7 @@ typedef struct uv_req_s uv_req_t;
 typedef struct uv_shutdown_s uv_shutdown_t;
 typedef struct uv_write_s uv_write_t;
 typedef struct uv_connect_s uv_connect_t;
+typedef struct uv_tp_req_s uv_tp_req_t;
 
 #if defined(__unix__) || defined(__POSIX__) || defined(__APPLE__)
 # include "uv-unix.h"
@@ -132,6 +133,8 @@ typedef void (*uv_check_cb)(uv_check_t* handle, int status);
 typedef void (*uv_idle_cb)(uv_idle_t* handle, int status);
 typedef void (*uv_getaddrinfo_cb)(uv_getaddrinfo_t* handle, int status, struct addrinfo* res);
 typedef void (*uv_exit_cb)(uv_process_t*, int exit_status, int term_signal);
+typedef int (*uv_tp_cb)(uv_tp_req_t* req, int status);
+typedef void (*uv_tp_custom_cb)(uv_tp_req_t *req);
 
 
 /* Expand this list if necessary. */
@@ -205,6 +208,7 @@ typedef enum {
   UV_WRITE,
   UV_SHUTDOWN,
   UV_WAKEUP,
+  UV_TP,
   UV_REQ_TYPE_PRIVATE
 } uv_req_type;
 
@@ -647,6 +651,75 @@ int uv_spawn(uv_process_t*, uv_process_options_t options);
  * call uv_close on the process.
  */
 int uv_process_kill(uv_process_t*, int signum);
+
+
+enum
+{
+  UV_TP_CUSTOM,
+  UV_TP_OPEN,
+  UV_TP_CLOSE,
+  UV_TP_READ,
+  UV_TP_WRITE,
+  UV_TP_SENDFILE,
+  UV_TP_STAT,
+  UV_TP_LSTAT,
+  UV_TP_FSTAT,
+  UV_TP_FTRUNCATE,
+  UV_TP_UTIME,
+  UV_TP_FUTIME,
+  UV_TP_CHMOD,
+  UV_TP_FCHMOD,
+  UV_TP_CHOWN,
+  UV_TP_FCHOWN,
+  UV_TP_FSYNC,
+  UV_TP_FDATASYNC,
+  UV_TP_RENAME,
+  UV_TP_UNLINK,
+  UV_TP_RMDIR,
+  UV_TP_MKDIR,
+  UV_TP_RENAME,
+  UV_TP_READDIR,
+  UV_TP_LINK,
+  UV_TP_SYMLINK,
+  UV_TP_READLINK,
+} uv_tp_type;
+
+struct uv_tp_req_s {
+  UV_REQ_FIELDS
+  uv_tp_cb cb;
+  ssize_t result;
+  void *ptr1;
+  void *ptr2;
+  uv_tp_type type;
+  int errorno;
+  UV_TP_PRIVATE_FIELDS
+};
+
+void uv_tp_close     (uv_tp_req_t* req, int fd, uv_tp_cb cb);
+void uv_tp_open      (uv_tp_req_t* req, const char *path, int flags, int mode, uv_tp_cb cb);
+void uv_tp_read      (uv_tp_req_t* req, int fd, void *buf, size_t length, off_t offset, uv_tp_cb cb);
+void uv_tp_fdatasync (uv_tp_req_t* req, int fd, uv_tp_cb cb);
+void uv_tp_fsync     (uv_tp_req_t* req, int fd, uv_tp_cb cb);
+void uv_tp_rename    (uv_tp_req_t* req, const char *path, const char *new_path, uv_tp_cb cb);
+void uv_tp_truncate  (uv_tp_req_t* req, const char *path, off_t offset, uv_tp_cb cb);
+void uv_tp_rmdir     (uv_tp_req_t* req, const char *path, uv_tp_cb cb);
+void uv_tp_mkdir     (uv_tp_req_t* req, const char *path, int mode, uv_tp_cb cb);
+void uv_tp_sendfile  (uv_tp_req_t* req, int out_fd, int in_fd, off_t in_offset, size_t length, uv_tp_cb cb);
+void uv_tp_readdir   (uv_tp_req_t* req, const char *path, int flags, uv_tp_cb cb);
+void uv_tp_stat      (uv_tp_req_t* req, const char *path, uv_tp_cb cb);
+void uv_tp_lstat     (uv_tp_req_t* req, const char *path, uv_tp_cb cb);
+void uv_tp_link      (uv_tp_req_t* req, const char *path, const char *new_path, uv_tp_cb cb);
+void uv_tp_symlink   (uv_tp_req_t* req, const char *path, const char *new_path, uv_tp_cb cb);
+void uv_tp_readlink  (uv_tp_req_t* req, const char *path, uv_tp_cb cb);
+void uv_tp_unlink    (uv_tp_req_t* req, const char *path, uv_tp_cb cb);
+void uv_tp_write     (uv_tp_req_t* req, int fd, void *buf, size_t length, off_t offset, uv_tp_cb cb);
+void uv_tp_chmod     (uv_tp_req_t* req, const char *path, int mode, uv_tp_cb cb);
+void uv_tp_fchmod    (uv_tp_req_t* req, int fd, int mode, uv_tp_cb cb);
+void uv_tp_chown     (uv_tp_req_t* req, const char *path, int uid, int gid, uv_tp_cb cb);
+void uv_tp_fchown    (uv_tp_req_t* req, int fd, int uid, int gid, uv_tp_cb cb);
+void uv_tp_utime     (uv_tp_req_t* req, const char *path, double atime, double mtime, uv_tp_cb cb);
+void uv_tp_futime    (uv_tp_req_t* req, int fd, double atime, double mtime, uv_tp_cb cb);
+void uv_tp_custom    (uv_tp_custom_cb custom_cb, uv_tp_cb cb);
 
 
 /* Utility */
