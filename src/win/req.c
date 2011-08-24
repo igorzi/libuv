@@ -141,6 +141,10 @@ void uv_process_reqs() {
         uv_process_proc_close((uv_process_t*) req->data);
         break;
 
+      case UV_FS:
+        uv_process_fs_req(req);
+        break;
+
       default:
         assert(0);
     }

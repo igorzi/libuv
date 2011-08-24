@@ -67,6 +67,7 @@ TEST_DECLARE   (spawn_exit_code)
 TEST_DECLARE   (spawn_stdout)
 TEST_DECLARE   (spawn_stdin)
 TEST_DECLARE   (spawn_and_kill)
+TEST_DECLARE   (fs_async)
 #ifdef _WIN32
 TEST_DECLARE   (spawn_detect_pipe_name_collisions_on_windows)
 TEST_DECLARE   (argument_escaping)
@@ -158,6 +159,8 @@ TASK_LIST_START
   TEST_ENTRY  (argument_escaping)
   TEST_ENTRY  (environment_creation)
 #endif
+
+  TEST_ENTRY  (fs_async)
 
 #if 0
   /* These are for testing the test runner. */

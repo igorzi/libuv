@@ -42,6 +42,8 @@ typedef struct uv_buf_t {
   char* base;
 } uv_buf_t;
 
+typedef int UV_NATIVE_FILE_TYPE;
+
 #define UV_REQ_TYPE_PRIVATE               \
   /* TODO: remove the req suffix */       \
   UV_ARES_EVENT_REQ,                      \
@@ -193,6 +195,13 @@ typedef struct uv_buf_t {
   HANDLE wait_handle;                     \
   HANDLE process_handle;                  \
   HANDLE close_handle;
+
+#define UV_FS_REQ_PRIVATE_FIELDS          \
+  int flags;                              \
+  void* arg0;                             \
+  void* arg1;                             \
+  void* arg2;                             \
+  void* arg3;
 
 int uv_utf16_to_utf8(const wchar_t* utf16Buffer, size_t utf16Size, char* utf8Buffer, size_t utf8Size);
 int uv_utf8_to_utf16(const char* utf8Buffer, wchar_t* utf16Buffer, size_t utf16Size);
