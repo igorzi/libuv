@@ -1,4 +1,5 @@
 /* Copyright Joyent, Inc. and other Node contributors. All rights reserved.
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
  * deal in the Software without restriction, including without limitation the
@@ -18,47 +19,10 @@
  * IN THE SOFTWARE.
  */
 
-#include "uv.h"
-#include "internal.h"
+#ifndef UV_LINUX_H
+#define UV_LINUX_H
 
-#include <stdint.h>
-#include <stddef.h>
-#include <unistd.h>
-#include <errno.h>
-#include <time.h>
+#define UV_FS_EVENT_PRIVATE_FIELDS \
+  int inotify_fd;
 
-#include <sys/inotify.h>
-
-#undef NANOSEC
-#define NANOSEC 1000000000
-
-/*
- * There's probably some way to get time from Linux than gettimeofday(). What
- * it is, I don't know.
- */
-uint64_t uv_hrtime() {
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (ts.tv_sec * NANOSEC + ts.tv_nsec);
-}
-
-
-int uv_exepath(char* buffer, size_t* size) {
-  if (!buffer || !size) {
-    return -1;
-  }
-
-  *size = readlink("/proc/self/exe", buffer, *size - 1);
-  if (*size <= 0) return -1;
-  buffer[*size] = '\0';
-  return 0;
-}
-
-
-int uv_fs_event_init(uv_loop_t* loop,
-                     uv_fs_event_t* handle,
-                     const char* filename,
-                     uv_fs_event_cb cb) {
-  uv_err_new(loop, ENOSYS);
-  return -1;
-}
+#endif /* UV_LINUX_H */
