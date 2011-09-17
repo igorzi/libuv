@@ -262,6 +262,9 @@ static void uv_tcp_queue_accept(uv_tcp_t* handle, uv_tcp_accept_t* req) {
   /* Prepare the overlapped structure. */
   memset(&(req->overlapped), 0, sizeof(req->overlapped));
 
+  req->accept_socket = accept_socket;
+  handle->reqs_pending++;
+
   success = pAcceptExFamily(handle->socket,
                           accept_socket,
                           (void*)req->accept_buffer,
@@ -273,18 +276,14 @@ static void uv_tcp_queue_accept(uv_tcp_t* handle, uv_tcp_accept_t* req) {
 
   if (UV_SUCCEEDED_WITHOUT_IOCP(success)) {
     /* Process the req without IOCP. */
-    req->accept_socket = accept_socket;
-    handle->reqs_pending++;
     uv_insert_pending_req(loop, (uv_req_t*)req);
   } else if (UV_SUCCEEDED_WITH_IOCP(success)) {
     /* The req will be processed with IOCP. */
-    req->accept_socket = accept_socket;
-    handle->reqs_pending++;
   } else {
     /* Make this req pending reporting an error. */
+    req->accept_socket = INVALID_SOCKET;
     SET_REQ_ERROR(req, WSAGetLastError());
     uv_insert_pending_req(loop, (uv_req_t*)req);
-    handle->reqs_pending++;
     /* Destroy the preallocated client socket. */
     closesocket(accept_socket);
   }
@@ -318,6 +317,9 @@ static void uv_tcp_queue_read(uv_loop_t* loop, uv_tcp_t* handle) {
     buf.len = 0;
   }
 
+  handle->flags |= UV_HANDLE_READ_PENDING;
+  handle->reqs_pending++;
+
   flags = 0;
   result = WSARecv(handle->socket,
                    (WSABUF*)&buf,
@@ -329,20 +331,48 @@ static void uv_tcp_queue_read(uv_loop_t* loop, uv_tcp_t* handle) {
 
   if (UV_SUCCEEDED_WITHOUT_IOCP(result == 0)) {
     /* Process the req without IOCP. */
-    handle->flags |= UV_HANDLE_READ_PENDING;
     req->overlapped.InternalHigh = bytes;
-    handle->reqs_pending++;
     uv_insert_pending_req(loop, req);
   } else if (UV_SUCCEEDED_WITH_IOCP(result == 0)) {
     /* The req will be processed with IOCP. */
-    handle->flags |= UV_HANDLE_READ_PENDING;
-    handle->reqs_pending++;
   } else {
+    handle->flags &= ~UV_HANDLE_READ_PENDING;
     /* Make this req pending reporting an error. */
     SET_REQ_ERROR(req, WSAGetLastError());
     uv_insert_pending_req(loop, req);
-    handle->reqs_pending++;
   }
+}
+
+
+int uv_tcp_listen_import(uv_tcp_t* handle, uv_tcp_t* import_handle, int backlog, uv_connection_cb cb) {
+  uv_loop_t* loop = handle->loop;
+  unsigned int i;
+  uv_tcp_accept_t* req;
+
+  assert(backlog > 0);
+
+  handle->socket = import_handle->socket;
+
+  handle->flags |= UV_HANDLE_LISTENING;
+  handle->connection_cb = cb;
+
+  assert(!handle->accept_reqs);
+  handle->accept_reqs = (uv_tcp_accept_t*)
+    malloc(uv_simultaneous_server_accepts * sizeof(uv_tcp_accept_t));
+  if (!handle->accept_reqs) {
+    uv_fatal_error(ERROR_OUTOFMEMORY, "malloc");
+  }
+
+  for (i = 0; i < uv_simultaneous_server_accepts; i++) {
+    req = &handle->accept_reqs[i];
+    uv_req_init(loop, (uv_req_t*)req);
+    req->type = UV_ACCEPT;
+    req->accept_socket = INVALID_SOCKET;
+    req->data = handle;
+    uv_tcp_queue_accept(handle, req);
+  }
+
+  return 0;
 }
 
 
@@ -646,6 +676,11 @@ int uv_tcp_write(uv_loop_t* loop, uv_write_t* req, uv_tcp_t* handle,
   req->cb = cb;
   memset(&req->overlapped, 0, sizeof(req->overlapped));
 
+  req->queued_bytes = uv_count_bufs(bufs, bufcnt);
+  handle->reqs_pending++;
+  handle->write_reqs_pending++;
+  handle->write_queue_size += req->queued_bytes;
+
   result = WSASend(handle->socket,
                    (WSABUF*)bufs,
                    bufcnt,
@@ -657,16 +692,15 @@ int uv_tcp_write(uv_loop_t* loop, uv_write_t* req, uv_tcp_t* handle,
   if (UV_SUCCEEDED_WITHOUT_IOCP(result == 0)) {
     /* Request completed immediately. */
     req->queued_bytes = 0;
-    handle->reqs_pending++;
-    handle->write_reqs_pending++;
+    handle->write_queue_size -= req->queued_bytes;
     uv_insert_pending_req(loop, (uv_req_t*) req);
   } else if (UV_SUCCEEDED_WITH_IOCP(result == 0)) {
     /* Request queued by the kernel. */
-    req->queued_bytes = uv_count_bufs(bufs, bufcnt);
-    handle->reqs_pending++;
-    handle->write_reqs_pending++;
-    handle->write_queue_size += req->queued_bytes;
   } else {
+    req->queued_bytes = 0;
+    handle->reqs_pending--;
+    handle->write_reqs_pending--;
+    handle->write_queue_size -= req->queued_bytes;
     /* Send failed due to an error. */
     uv_set_sys_error(loop, WSAGetLastError());
     return -1;

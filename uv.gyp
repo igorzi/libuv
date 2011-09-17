@@ -229,6 +229,23 @@
     },
 
     {
+      'target_name': 'multi-threaded-server',
+      'type': 'executable',
+      'dependencies': [ 'uv' ],
+      'sources': [        'server.c',      ],
+      'conditions': [
+        [ 'OS=="win"', {
+          'libraries': [ 'ws2_32.lib' ]
+        }]
+      ],
+      'msvs-settings': {
+        'VCLinkerTool': {
+          'SubSystem': 1, # /subsystem:console
+        },
+      },
+    },
+
+    {
       'target_name': 'run-tests',
       'type': 'executable',
       'dependencies': [ 'uv' ],

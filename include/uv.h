@@ -89,7 +89,7 @@ void uv_loop_delete(uv_loop_t*);
 /*
  * Returns the default loop.
  */
-uv_loop_t* uv_default_loop();
+uv_loop_t* uv_default_loop(int threads);
 
 /*
  * This function starts the event loop. It blocks until the reference count
@@ -419,6 +419,8 @@ int uv_tcp_bind(uv_tcp_t* handle, struct sockaddr_in);
 int uv_tcp_bind6(uv_tcp_t* handle, struct sockaddr_in6);
 int uv_tcp_getsockname(uv_tcp_t* handle, struct sockaddr* name, int* namelen);
 int uv_tcp_getpeername(uv_tcp_t* handle, struct sockaddr* name, int* namelen);
+
+int uv_tcp_listen_import(uv_tcp_t* handle, uv_tcp_t* import_handle, int backlog, uv_connection_cb cb);
 
 /*
  * uv_tcp_connect, uv_tcp_connect6

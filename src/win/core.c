@@ -38,6 +38,8 @@ static uv_loop_t uv_default_loop_;
 static uv_once_t uv_init_guard_ = UV_ONCE_INIT;
 static uv_once_t uv_default_loop_init_guard_ = UV_ONCE_INIT;
 
+static int uv_thread_count_ = 1;
+
 
 static void uv_init(void) {
   /* Initialize winsock */
@@ -53,7 +55,7 @@ static void uv_init(void) {
 
 static void uv_loop_init(uv_loop_t* loop) {
   /* Create an I/O completion port */
-  loop->iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
+  loop->iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, uv_thread_count_);
   if (loop->iocp == NULL) {
     uv_fatal_error(GetLastError(), "CreateIoCompletionPort");
   }
@@ -92,7 +94,8 @@ static void uv_default_loop_init(void) {
 }
 
 
-uv_loop_t* uv_default_loop() {
+uv_loop_t* uv_default_loop(int threads) {
+  uv_thread_count_ = threads;
   uv_once(&uv_default_loop_init_guard_, uv_default_loop_init);
   return &uv_default_loop_;
 }
