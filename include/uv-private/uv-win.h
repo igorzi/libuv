@@ -57,9 +57,9 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
   /* Tail of a single-linked circular queue of pending reqs. If the queue */  \
   /* is empty, tail_ is NULL. If there is only one item, */                   \
   /* tail_->next_req == tail_ */                                              \
-  uv_req_t* pending_reqs_tail;                                                \
+  /*uv_req_t* pending_reqs_tail;*/                                                \
   /* Head of a single-linked list of closed handles */                        \
-  uv_handle_t* endgame_handles;                                               \
+  /*uv_handle_t* endgame_handles;*/                                               \
   /* The head of the timers tree */                                           \
   struct uv_timer_tree_s timers;                                              \
     /* Lists of active loop (prepare / check / idle) watchers */              \

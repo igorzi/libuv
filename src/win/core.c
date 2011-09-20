@@ -40,6 +40,10 @@ static uv_once_t uv_default_loop_init_guard_ = UV_ONCE_INIT;
 
 static int uv_thread_count_ = 1;
 
+__declspec( thread ) uv_req_t* pending_reqs_tail;
+__declspec( thread ) uv_handle_t* endgame_handles;
+__declspec( thread ) uv_tcp_accept_t* pending_accepts;
+
 
 static void uv_init(void) {
   /* Initialize winsock */
@@ -64,9 +68,11 @@ static void uv_loop_init(uv_loop_t* loop) {
 
   uv_update_time(loop);
 
-  loop->pending_reqs_tail = NULL;
+  pending_reqs_tail = NULL;
 
-  loop->endgame_handles = NULL;
+  endgame_handles = NULL;
+
+  pending_accepts = NULL;
 
   RB_INIT(&loop->timers);
 
@@ -184,15 +190,15 @@ static void uv_poll_ex(uv_loop_t* loop, int block) {
     uv_process_timers((loop));                                                \
                                                                               \
     /* Call idle callbacks if nothing to do. */                               \
-    if ((loop)->pending_reqs_tail == NULL &&                                  \
-        (loop)->endgame_handles == NULL) {                                    \
+    if (pending_reqs_tail == NULL &&                                  \
+        endgame_handles == NULL) {                                    \
       uv_idle_invoke((loop));                                                 \
     }                                                                         \
                                                                               \
     /* Completely flush all pending reqs and endgames. */                     \
     /* We do even when we just called the idle callbacks because those may */ \
     /* have closed handles or started requests that short-circuited. */       \
-    while ((loop)->pending_reqs_tail || (loop)->endgame_handles) {            \
+    while (pending_reqs_tail || endgame_handles) {            \
       uv_process_endgames((loop));                                            \
       uv_process_reqs((loop));                                                \
     }                                                                         \
@@ -210,6 +216,10 @@ static void uv_poll_ex(uv_loop_t* loop, int block) {
 
 
 int uv_run(uv_loop_t* loop) {
+  pending_reqs_tail = NULL;
+  endgame_handles = NULL;
+  pending_accepts = NULL;
+
   if (pGetQueuedCompletionStatusEx) {
     UV_LOOP(loop, uv_poll_ex);
   } else {

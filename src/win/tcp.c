@@ -431,7 +431,7 @@ int uv_tcp_accept(uv_tcp_t* server, uv_tcp_t* client) {
   uv_loop_t* loop = server->loop;
   int rv = 0;
 
-  uv_tcp_accept_t* req = server->pending_accepts;
+  uv_tcp_accept_t* req = pending_accepts;
 
   if (!req) {
     /* No valid connections found, so we error out. */
@@ -454,7 +454,7 @@ int uv_tcp_accept(uv_tcp_t* server, uv_tcp_t* client) {
   }
 
   /* Prepare the req to pick up a new connection */
-  server->pending_accepts = req->next_pending;
+  pending_accepts = req->next_pending;
   req->next_pending = NULL;
   req->accept_socket = INVALID_SOCKET;
 
@@ -854,8 +854,8 @@ void uv_process_tcp_accept_req(uv_loop_t* loop, uv_tcp_t* handle,
                   SO_UPDATE_ACCEPT_CONTEXT,
                   (char*)&handle->socket,
                   sizeof(handle->socket)) == 0) {
-    req->next_pending = handle->pending_accepts;
-    handle->pending_accepts = req;
+    req->next_pending = pending_accepts;
+    pending_accepts = req;
 
     /* Accept and SO_UPDATE_ACCEPT_CONTEXT were successful. */
     if (handle->connection_cb) {

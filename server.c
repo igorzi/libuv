@@ -60,9 +60,11 @@ void cl_write(uv_tcp_t* handle) {
 }
 
 void cl_read_cb(uv_stream_t* stream, ssize_t nread, uv_buf_t buf) {
-  CHECK(nread != -1);
   free(buf.base);
-  cl_write((uv_tcp_t*)stream);
+
+  if (nread > 0) {
+    cl_write((uv_tcp_t*)stream);
+  }
 }
 
 void connection_cb(uv_stream_t* server, int status) {

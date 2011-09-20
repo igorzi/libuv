@@ -29,6 +29,10 @@
 #include "winapi.h"
 #include "winsock.h"
 
+extern __declspec( thread ) uv_req_t* pending_reqs_tail;
+extern __declspec( thread ) uv_handle_t* endgame_handles;
+extern __declspec( thread ) uv_tcp_accept_t* pending_accepts;
+
 
 /*
  * Timers

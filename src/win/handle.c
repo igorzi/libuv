@@ -131,8 +131,8 @@ void uv_want_endgame(uv_loop_t* loop, uv_handle_t* handle) {
   if (!(handle->flags & UV_HANDLE_ENDGAME_QUEUED)) {
     handle->flags |= UV_HANDLE_ENDGAME_QUEUED;
 
-    handle->endgame_next = loop->endgame_handles;
-    loop->endgame_handles = handle;
+    handle->endgame_next = endgame_handles;
+    endgame_handles = handle;
   }
 }
 
@@ -140,9 +140,9 @@ void uv_want_endgame(uv_loop_t* loop, uv_handle_t* handle) {
 void uv_process_endgames(uv_loop_t* loop) {
   uv_handle_t* handle;
 
-  while (loop->endgame_handles) {
-    handle = loop->endgame_handles;
-    loop->endgame_handles = handle->endgame_next;
+  while (endgame_handles) {
+    handle = endgame_handles;
+    endgame_handles = handle->endgame_next;
 
     handle->flags &= ~UV_HANDLE_ENDGAME_QUEUED;
 

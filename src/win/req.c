@@ -25,7 +25,6 @@
 #include "../uv-common.h"
 #include "internal.h"
 
-
 void uv_req_init(uv_loop_t* loop, uv_req_t* req) {
   loop->counters.req_init++;
   req->type = UV_UNKNOWN_REQ;
@@ -40,13 +39,13 @@ uv_req_t* uv_overlapped_to_req(OVERLAPPED* overlapped) {
 
 void uv_insert_pending_req(uv_loop_t* loop, uv_req_t* req) {
   req->next_req = NULL;
-  if (loop->pending_reqs_tail) {
-    req->next_req = loop->pending_reqs_tail->next_req;
-    loop->pending_reqs_tail->next_req = req;
-    loop->pending_reqs_tail = req;
+  if (pending_reqs_tail) {
+    req->next_req = pending_reqs_tail->next_req;
+    pending_reqs_tail->next_req = req;
+    pending_reqs_tail = req;
   } else {
     req->next_req = req;
-    loop->pending_reqs_tail = req;
+    pending_reqs_tail = req;
   }
 }
 
@@ -54,13 +53,13 @@ void uv_insert_pending_req(uv_loop_t* loop, uv_req_t* req) {
 static uv_req_t* uv_remove_pending_req(uv_loop_t* loop) {
   uv_req_t* req;
 
-  if (loop->pending_reqs_tail) {
-    req = loop->pending_reqs_tail->next_req;
+  if (pending_reqs_tail) {
+    req = pending_reqs_tail->next_req;
 
-    if (req == loop->pending_reqs_tail) {
-      loop->pending_reqs_tail = NULL;
+    if (req == pending_reqs_tail) {
+      pending_reqs_tail = NULL;
     } else {
-      loop->pending_reqs_tail->next_req = req->next_req;
+      pending_reqs_tail->next_req = req->next_req;
     }
 
     return req;
