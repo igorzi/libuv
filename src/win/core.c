@@ -185,7 +185,7 @@ static void uv_poll_ex(uv_loop_t* loop, int block) {
 
 
 #define UV_LOOP(loop, poll)                                                   \
-  while ((loop)->refs > 0) {                                                  \
+  while (1) {                                                  \
     uv_update_time((loop));                                                   \
     uv_process_timers((loop));                                                \
                                                                               \
@@ -203,13 +203,9 @@ static void uv_poll_ex(uv_loop_t* loop, int block) {
       uv_process_reqs((loop));                                                \
     }                                                                         \
                                                                               \
-    if ((loop)->refs <= 0) {                                                  \
-      break;                                                                  \
-    }                                                                         \
-                                                                              \
     uv_prepare_invoke((loop));                                                \
                                                                               \
-    poll((loop), (loop)->idle_handles == NULL && (loop)->refs > 0);           \
+    poll((loop), 1);           \
                                                                               \
     uv_check_invoke((loop));                                                  \
   }

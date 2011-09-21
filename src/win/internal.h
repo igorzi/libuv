@@ -74,11 +74,7 @@ void uv_process_endgames(uv_loop_t* loop);
 
 #define DECREASE_PENDING_REQ_COUNT(handle)    \
   do {                                        \
-    assert(handle->reqs_pending > 0);         \
-    InterlockedDecrement(&handle->reqs_pending);                   \
-                                              \
-    if (handle->flags & UV_HANDLE_CLOSING &&  \
-        handle->reqs_pending == 0) {          \
+    if (InterlockedDecrement(&handle->reqs_pending) == 0 && handle->flags & UV_HANDLE_CLOSING) {          \
       uv_want_endgame(loop, (uv_handle_t*)handle);  \
     }                                         \
   } while (0)
