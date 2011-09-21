@@ -44,8 +44,12 @@ uv_buf_t cl_alloc_cb(uv_handle_t* handle, size_t suggested_size) {
 
 void cl_write(uv_tcp_t* handle) {
   int r;
+  static volatile int fubar;
+
   uv_buf_t buf = uv_buf_init(message, (sizeof message) - 1);
   uv_write_t* req = (uv_write_t*)malloc(sizeof *req);
+
+  for (fubar = 50000; fubar > 0; fubar--) {}
 
   r = uv_write(req, (uv_stream_t*) handle, &buf, 1, cl_write_cb);
   if (r) {
