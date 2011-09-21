@@ -128,7 +128,7 @@ void uv_tcp_endgame(uv_loop_t* loop, uv_tcp_t* handle) {
       }
       handle->shutdown_req->cb(handle->shutdown_req, status);
     }
-    handle->reqs_pending--;
+    InterlockedDecrement(&handle->reqs_pending);
   }
 
   if (handle->flags & UV_HANDLE_CLOSING &&
@@ -255,7 +255,7 @@ static void uv_tcp_queue_accept(uv_tcp_t* handle, uv_tcp_accept_t* req) {
   if (accept_socket == INVALID_SOCKET) {
     SET_REQ_ERROR(req, WSAGetLastError());
     uv_insert_pending_req(loop, (uv_req_t*)req);
-    handle->reqs_pending++;
+    InterlockedIncrement(&handle->reqs_pending);
     return;
   }
 
@@ -263,7 +263,7 @@ static void uv_tcp_queue_accept(uv_tcp_t* handle, uv_tcp_accept_t* req) {
   memset(&(req->overlapped), 0, sizeof(req->overlapped));
 
   req->accept_socket = accept_socket;
-  handle->reqs_pending++;
+  InterlockedIncrement(&handle->reqs_pending);
 
   success = pAcceptExFamily(handle->socket,
                           accept_socket,
@@ -318,7 +318,7 @@ static void uv_tcp_queue_read(uv_loop_t* loop, uv_tcp_t* handle) {
   }
 
   handle->flags |= UV_HANDLE_READ_PENDING;
-  handle->reqs_pending++;
+  InterlockedIncrement(&handle->reqs_pending);
 
   flags = 0;
   result = WSARecv(handle->socket,
@@ -537,11 +537,11 @@ int uv_tcp_connect(uv_connect_t* req, uv_tcp_t* handle,
 
   if (UV_SUCCEEDED_WITHOUT_IOCP(success)) {
     /* Process the req without IOCP. */
-    handle->reqs_pending++;
+    InterlockedIncrement(&handle->reqs_pending);
     uv_insert_pending_req(loop, (uv_req_t*)req);
   } else if (UV_SUCCEEDED_WITH_IOCP(success)) {
     /* The req will be processed with IOCP. */
-    handle->reqs_pending++;
+    InterlockedIncrement(&handle->reqs_pending);
   } else {
     uv_set_sys_error(loop, WSAGetLastError());
     return -1;
@@ -592,10 +592,10 @@ int uv_tcp_connect6(uv_connect_t* req, uv_tcp_t* handle,
                        &req->overlapped);
 
   if (UV_SUCCEEDED_WITHOUT_IOCP(success)) {
-    handle->reqs_pending++;
+    InterlockedIncrement(&handle->reqs_pending);
     uv_insert_pending_req(loop, (uv_req_t*)req);
   } else if (UV_SUCCEEDED_WITH_IOCP(success)) {
-    handle->reqs_pending++;
+    InterlockedIncrement(&handle->reqs_pending);
   } else {
     uv_set_sys_error(loop, WSAGetLastError());
     return -1;
@@ -677,7 +677,7 @@ int uv_tcp_write(uv_loop_t* loop, uv_write_t* req, uv_tcp_t* handle,
   memset(&req->overlapped, 0, sizeof(req->overlapped));
 
   req->queued_bytes = uv_count_bufs(bufs, bufcnt);
-  handle->reqs_pending++;
+  InterlockedIncrement(&handle->reqs_pending);
   handle->write_reqs_pending++;
   handle->write_queue_size += req->queued_bytes;
 
@@ -698,7 +698,7 @@ int uv_tcp_write(uv_loop_t* loop, uv_write_t* req, uv_tcp_t* handle,
     /* Request queued by the kernel. */
   } else {
     req->queued_bytes = 0;
-    handle->reqs_pending--;
+    InterlockedDecrement(&handle->reqs_pending);
     handle->write_reqs_pending--;
     handle->write_queue_size -= req->queued_bytes;
     /* Send failed due to an error. */
