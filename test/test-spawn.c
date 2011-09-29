@@ -138,7 +138,7 @@ TEST_IMPL(spawn_stdout) {
 
   init_process_options("spawn_helper2", exit_cb);
 
-  uv_pipe_init(uv_default_loop(), &out);
+  uv_pipe_init(uv_default_loop(), &out, 0);
   options.stdout_stream = &out;
 
   r = uv_spawn(uv_default_loop(), &process, options);
@@ -169,8 +169,8 @@ int r;
 
   init_process_options("spawn_helper3", exit_cb);
 
-  uv_pipe_init(uv_default_loop(), &out);
-  uv_pipe_init(uv_default_loop(), &in);
+  uv_pipe_init(uv_default_loop(), &out, 0);
+  uv_pipe_init(uv_default_loop(), &in, 0);
   options.stdout_stream = &out;
   options.stdin_stream = &in;
 

@@ -22,6 +22,7 @@
 #include "uv.h"
 #include "task.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static char exepath[1024];
@@ -30,6 +31,8 @@ static char* args[3];
 static uv_pipe_t channel;
 
 static int exit_cb_called;
+
+static uv_write_t write_req;
 
 
 static void exit_cb(uv_process_t* process, int exit_status, int term_signal) {
@@ -47,9 +50,17 @@ static uv_buf_t on_alloc(uv_handle_t* handle, size_t suggested_size) {
 
 
 static void on_read(uv_stream_t* pipe, ssize_t nread, uv_buf_t buf) {
+  int r;
+  uv_buf_t outbuf;
   /* listen on the handle provided.... */
 
-  printf("got %d bytes\n", (int)nread);
+  if (nread) {
+    outbuf = uv_buf_init("world\n", 6);
+    r = uv_write(&write_req, pipe, &outbuf, 1, NULL);
+    ASSERT(r == 0);
+
+    fprintf(stderr, "got %d bytes\n", (int)nread);
+  }
 
   if (buf.base) {
     free(buf.base);
@@ -62,7 +73,7 @@ TEST_IMPL(ipc) {
   uv_process_options_t options;
   uv_process_t process;
 
-  r = uv_pipe_init(uv_default_loop(), &channel);
+  r = uv_pipe_init(uv_default_loop(), &channel, 1);
   ASSERT(r == 0);
 
   memset(&options, 0, sizeof(uv_process_options_t));
@@ -77,8 +88,6 @@ TEST_IMPL(ipc) {
   options.args = args;
   options.exit_cb = exit_cb;
   options.stdin_stream = &channel;
-  options.stdout_stream = NULL;
-  options.stderr_stream = NULL;
 
   r = uv_spawn(uv_default_loop(), &process, options);
   ASSERT(r == 0);
