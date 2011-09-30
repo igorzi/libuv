@@ -47,7 +47,7 @@ static unsigned int active_tcp_streams = 0;
 
 
 static int uv_tcp_set_socket(uv_loop_t* loop, uv_tcp_t* handle,
-    SOCKET socket) {
+    SOCKET socket, int imported) {
   DWORD yes = 1;
 
   assert(handle->socket == INVALID_SOCKET);
@@ -70,8 +70,12 @@ static int uv_tcp_set_socket(uv_loop_t* loop, uv_tcp_t* handle,
                              loop->iocp,
                              (ULONG_PTR)socket,
                              0) == NULL) {
-    uv__set_sys_error(loop, GetLastError());
-    return -1;
+    if (imported) {
+      handle->flags |= UV_HANDLE_EMULATE_IOCP;
+    } else {
+      uv__set_sys_error(loop, GetLastError());
+      return -1;
+    }
   }
 
   if (pSetFileCompletionNotificationModes) {
@@ -867,4 +871,15 @@ void uv_process_tcp_connect_req(uv_loop_t* loop, uv_tcp_t* handle,
   }
 
   DECREASE_PENDING_REQ_COUNT(handle);
+}
+
+
+int uv_tcp_import(uv_tcp_t* tcp, WSAPROTOCOL_INFOW socket_protocol_info) {
+  SOCKET socket = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_IP, &socket_protocol_info, 0, WSA_FLAG_OVERLAPPED);
+  if (socket == INVALID_SOCKET) {
+    uv__set_sys_error(tcp->loop, WSAGetLastError());
+    return -1;
+  }
+
+  return uv_tcp_set_socket(tcp->loop, tcp, socket);
 }

@@ -20,6 +20,7 @@
  */
 
 #include <assert.h>
+#include <io.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -38,6 +39,17 @@ static const uv_buf_t uv_null_buf_ = { 0, NULL };
 /* when the local ends wants to shut it down. */
 static const int64_t eof_timeout = 50; /* ms */
 
+#define UV_IPC_OPCODE_RAW_DATA   0
+#define UV_IPC_OPCODE_STREAM     1
+
+struct uv_ipc_frame_header {
+  char opcode;
+  union {
+    int64_t raw_data_length;
+    uv_handle_type stream_type;
+  };
+};
+
 static void eof_timer_init(uv_pipe_t* pipe);
 static void eof_timer_start(uv_pipe_t* pipe);
 static void eof_timer_stop(uv_pipe_t* pipe);
@@ -51,35 +63,24 @@ static void uv_unique_pipe_name(char* ptr, char* name, size_t size) {
 }
 
 
-int uv_pipe_init(uv_loop_t* loop, uv_pipe_t* handle) {
+int uv_pipe_init(uv_loop_t* loop, uv_pipe_t* handle, int libuv_pipe) {
   uv_stream_init(loop, (uv_stream_t*)handle);
 
   handle->type = UV_NAMED_PIPE;
   handle->reqs_pending = 0;
   handle->handle = INVALID_HANDLE_VALUE;
   handle->name = NULL;
+  handle->ipc_pid = 0;
+  handle->remaining_ipc_bytes = 0;
+  handle->pending_ipc_handle_type = UV_UNKNOWN_HANDLE;
+
+  if (libuv_pipe) {
+    handle->flags |= UV_HANDLE_USE_IPC_PROTOCOL;
+  }
 
   loop->counters.pipe_init++;
 
   return 0;
-}
-
-
-int uv_pipe_init_with_handle(uv_loop_t* loop, uv_pipe_t* handle,
-    HANDLE pipeHandle) {
-  int err = uv_pipe_init(loop, handle);
-
-  if (!err) {
-    /*
-     * At this point we don't know whether the pipe will be used as a client
-     * or a server.  So, we assume that it will be a client until
-     * uv_listen is called.
-     */
-    handle->handle = pipeHandle;
-    handle->flags |= UV_HANDLE_GIVEN_OS_HANDLE;
-  }
-
-  return err;
 }
 
 
@@ -131,7 +132,6 @@ int uv_stdio_pipe_server(uv_loop_t* loop, uv_pipe_t* handle, DWORD access,
 
   uv_pipe_connection_init(handle);
   handle->handle = pipeHandle;
-  handle->flags |= UV_HANDLE_GIVEN_OS_HANDLE;
   err = 0;
 
 done:
@@ -567,30 +567,42 @@ static void uv_pipe_queue_accept(uv_loop_t* loop, uv_pipe_t* handle,
 }
 
 
-int uv_pipe_accept(uv_pipe_t* server, uv_pipe_t* client) {
+int uv_pipe_accept(uv_pipe_t* server, uv_stream_t* client) {
   uv_loop_t* loop = server->loop;
-  /* Find a connection instance that has been connected, but not yet */
-  /* accepted. */
-  uv_pipe_accept_t* req = server->pending_accepts;
+  uv_pipe_t* pipe_client;
 
-  if (!req) {
-    /* No valid connections found, so we error out. */
-    uv__set_sys_error(loop, WSAEWOULDBLOCK);
-    return -1;
-  }
+  if (server->flags & UV_HANDLE_USE_IPC_PROTOCOL) {
+    if (server->pending_ipc_handle_type == UV_TCP) {
+      server->pending_ipc_handle_type = UV_UNKNOWN_HANDLE;
+      return uv_tcp_import((uv_tcp_t*)client, server->socket_protocol_info);
+    }
 
-  /* Initialize the client handle and copy the pipeHandle to the client */
-  uv_pipe_connection_init(client);
-  client->handle = req->pipeHandle;
+    assert(!"unknown stream sent over the pipe.");
+  } else {
+    pipe_client = (uv_pipe_t*)client;
 
-  /* Prepare the req to pick up a new connection */
-  server->pending_accepts = req->next_pending;
-  req->next_pending = NULL;
-  req->pipeHandle = INVALID_HANDLE_VALUE;
+    /* Find a connection instance that has been connected, but not yet */
+    /* accepted. */
+    uv_pipe_accept_t* req = server->pending_accepts;
 
-  if (!(server->flags & UV_HANDLE_CLOSING) &&
-      !(server->flags & UV_HANDLE_GIVEN_OS_HANDLE)) {
-    uv_pipe_queue_accept(loop, server, req, FALSE);
+    if (!req) {
+      /* No valid connections found, so we error out. */
+      uv__set_sys_error(loop, WSAEWOULDBLOCK);
+      return -1;
+    }
+
+    /* Initialize the client handle and copy the pipeHandle to the client */
+    uv_pipe_connection_init(pipe_client);
+    pipe_client->handle = req->pipeHandle;
+
+    /* Prepare the req to pick up a new connection */
+    server->pending_accepts = req->next_pending;
+    req->next_pending = NULL;
+    req->pipeHandle = INVALID_HANDLE_VALUE;
+
+    if (!(server->flags & UV_HANDLE_CLOSING)) {
+      uv_pipe_queue_accept(loop, server, req, FALSE);
+    }
   }
 
   return 0;
@@ -605,8 +617,7 @@ int uv_pipe_listen(uv_pipe_t* handle, int backlog, uv_connection_cb cb) {
   uv_pipe_accept_t* req;
   HANDLE pipeHandle;
 
-  if (!(handle->flags & UV_HANDLE_BOUND) &&
-      !(handle->flags & UV_HANDLE_GIVEN_OS_HANDLE)) {
+  if (!(handle->flags & UV_HANDLE_BOUND)) {
     uv__set_artificial_error(loop, UV_EINVAL);
     return -1;
   }
@@ -617,8 +628,7 @@ int uv_pipe_listen(uv_pipe_t* handle, int backlog, uv_connection_cb cb) {
     return -1;
   }
 
-  if (!(handle->flags & UV_HANDLE_PIPESERVER) &&
-      !(handle->flags & UV_HANDLE_GIVEN_OS_HANDLE)) {
+  if (!(handle->flags & UV_HANDLE_PIPESERVER)) {
     uv__set_artificial_error(loop, UV_ENOTSUP);
     return -1;
   }
@@ -626,30 +636,11 @@ int uv_pipe_listen(uv_pipe_t* handle, int backlog, uv_connection_cb cb) {
   handle->flags |= UV_HANDLE_LISTENING;
   handle->connection_cb = cb;
 
-  if (handle->flags & UV_HANDLE_GIVEN_OS_HANDLE) {
-    handle->flags |= UV_HANDLE_PIPESERVER;
-    pipeHandle = handle->handle;
-    assert(pipeHandle != INVALID_HANDLE_VALUE);
-    req = &handle->accept_reqs[0];
-    uv_req_init(loop, (uv_req_t*) req);
-    req->pipeHandle = pipeHandle;
-    req->type = UV_ACCEPT;
-    req->data = handle;
-    req->next_pending = NULL;
+  /* First pipe handle should have already been created in uv_pipe_bind */
+  assert(handle->accept_reqs[0].pipeHandle != INVALID_HANDLE_VALUE);
 
-    if (uv_set_pipe_handle(loop, handle, pipeHandle)) {
-      uv__set_sys_error(loop, GetLastError());
-      return -1;
-    }
-
-    uv_pipe_queue_accept(loop, handle, req, TRUE);
-  } else {
-    /* First pipe handle should have already been created in uv_pipe_bind */
-    assert(handle->accept_reqs[0].pipeHandle != INVALID_HANDLE_VALUE);
-
-    for (i = 0; i < COUNTOF(handle->accept_reqs); i++) {
-      uv_pipe_queue_accept(loop, handle, &handle->accept_reqs[i], i == 0);
-    }
+  for (i = 0; i < COUNTOF(handle->accept_reqs); i++) {
+    uv_pipe_queue_accept(loop, handle, &handle->accept_reqs[i], i == 0);
   }
 
   return 0;
@@ -689,6 +680,7 @@ static void uv_pipe_queue_read(uv_loop_t* loop, uv_pipe_t* handle) {
   eof_timer_start(handle);
 
   handle->flags |= UV_HANDLE_READ_PENDING;
+
   handle->reqs_pending++;
 }
 
@@ -716,10 +708,10 @@ int uv_pipe_read_start(uv_pipe_t* handle, uv_alloc_cb alloc_cb,
   handle->read_cb = read_cb;
   handle->alloc_cb = alloc_cb;
 
-  /* If reading was stopped and then started again, there could stell be a */
+  /* If reading was stopped and then started again, there could still be a */
   /* read request pending. */
   if (!(handle->flags & UV_HANDLE_READ_PENDING))
-    uv_pipe_queue_read(loop, handle);
+    uv_pipe_queue_read(loop, handle, 0);
 
   return 0;
 }
@@ -816,10 +808,42 @@ static void uv_pipe_read_error_or_eof(uv_loop_t* loop, uv_pipe_t* handle,
 }
 
 
+static void uv_process_ipc_message(uv_pipe_t* pipe, uv_buf_t buf, int read) {
+  uv_ipc_frame* frame;
+  int data_length;
+  uv_buf_t data_buf;
+
+  if (pipe->remaining_ipc_bytes == 0) {
+    assert(read >= sizeof(*frame));
+    frame = (uv_ipc_frame*)buf.base;
+
+    switch (frame->opcode) {
+      case UV_IPC_OPCODE_RAW_DATA:
+        //data_buf.base = frame->raw_data.data;
+        //data_buf.len = 
+        pipe->read_cb((uv_stream_t*)pipe, read, buf);
+        break;
+
+      case UV_IPC_OPCODE_STREAM:
+        if (pipe->read2_cb) {
+          // $TODO: create the imported stream, which can be accepted through uv_accept
+          pipe->read2_cb(pipe, read, buf, UV_NAMED_PIPE);
+        }
+        break;
+
+      default:
+        assert(!"Unknown opcode");
+    }
+  }
+}
+
+
 void uv_process_pipe_read_req(uv_loop_t* loop, uv_pipe_t* handle,
     uv_req_t* req) {
   DWORD bytes, avail;
   uv_buf_t buf;
+  uv_ipc_frame_header header;
+  WSAPROTOCOL_INFOW socket_protocol_info;
 
   assert(handle->type == UV_NAMED_PIPE);
 
@@ -838,11 +862,11 @@ void uv_process_pipe_read_req(uv_loop_t* loop, uv_pipe_t* handle,
     /* Do non-blocking reads until the buffer is empty */
     while (handle->flags & UV_HANDLE_READING) {
       if (!PeekNamedPipe(handle->handle,
-                         NULL,
-                         0,
-                         NULL,
-                         &avail,
-                         NULL)) {
+                          NULL,
+                          0,
+                          NULL,
+                          &avail,
+                          NULL)) {
         uv_pipe_read_error_or_eof(loop, handle, GetLastError(), uv_null_buf_);
         break;
       }
@@ -852,15 +876,85 @@ void uv_process_pipe_read_req(uv_loop_t* loop, uv_pipe_t* handle,
         break;
       }
 
+      if (handle->flags & UV_HANDLE_USE_IPC_PROTOCOL) {
+        if (handle->remaining_ipc_bytes == 0) {
+          /* First, read the header. */
+          if (!ReadFile(handle->handle,
+                        &header,
+                        sizeof(header),
+                        &bytes,
+                        NULL)) {
+            uv_pipe_read_error_or_eof(loop, handle, GetLastError(), uv_null_buf_);
+            break;
+          }
+
+          assert(bytes == sizeof(header));
+
+          switch (header.opcode) {
+            case UV_IPC_OPCODE_RAW_DATA:
+              handle->remaining_ipc_bytes = header.raw_data_length;
+              buf = handle->alloc_cb((uv_handle_t*) handle, avail - sizeof(header));
+              assert(buf.len > 0);
+              goto read_raw_data;
+              break;
+
+            case UV_IPC_OPCODE_STREAM:
+              assert(handle->pending_ipc_handle_type == UV_UNKNOWN_HANDLE);
+
+              assert(header.stream_type == UV_TCP);
+
+              if (!ReadFile(handle->handle,
+                            &socket_protocol_info,
+                            sizeof(socket_protocol_info),
+                            &bytes,
+                            NULL)) {
+                uv_pipe_read_error_or_eof(loop, handle, GetLastError(), uv_null_buf_);
+                break;
+              }
+
+              assert(bytes == sizeof(sizeof(handle->socket_protocol_info)));
+
+              if (handle->read2_cb) {
+                handle->pending_ipc_handle_type = header.stream_type;
+                handle->socket_protocol_info = socket_protocol_info;
+                buf.base =  (char*) &uv_zero_;
+                buf.len = 0;
+                handle->read2_cb(handle, 0, buf, header.stream_type);
+              }
+              continue;
+
+            default:
+              assert(!"Unknown opcode");
+              /* 
+               * We're now in an inconsistent state.  We expect messages
+               * that are framed using the IPC protocol, but the sender
+               * is not using the protocol.  Not much we can do.  Fail-fast.
+               */
+              uv_fatal_error(ERROR_INVALID_DATA, "malloc");
+              break;
+          }
+        }
+      }
+
       buf = handle->alloc_cb((uv_handle_t*) handle, avail);
       assert(buf.len > 0);
 
+read_raw_data:
       if (ReadFile(handle->handle,
                    buf.base,
                    buf.len,
                    &bytes,
                    NULL)) {
         /* Successful read */
+        if (handle->flags & UV_HANDLE_USE_IPC_PROTOCOL) {
+          handle->remaining_ipc_bytes =- bytes;
+        }
+
+        if (handle->flags & UV_HANDLE_USE_IPC_PROTOCOL &&
+          handle->read2_cb) {
+            handle->read2_cb(handle, bytes, buf, UV_UNKNOWN_HANDLE);
+        }
+
         handle->read_cb((uv_stream_t*)handle, bytes, buf);
         /* Read again only if bytes == buf.len */
         if (bytes <= buf.len) {
@@ -927,8 +1021,7 @@ void uv_process_pipe_accept_req(uv_loop_t* loop, uv_pipe_t* handle,
       CloseHandle(req->pipeHandle);
       req->pipeHandle = INVALID_HANDLE_VALUE;
     }
-    if (!(handle->flags & UV_HANDLE_CLOSING) &&
-        !(handle->flags & UV_HANDLE_GIVEN_OS_HANDLE)) {
+    if (!(handle->flags & UV_HANDLE_CLOSING)) {
       uv_pipe_queue_accept(loop, handle, req, FALSE);
     }
   }
@@ -1065,6 +1158,22 @@ static void eof_timer_close_cb(uv_handle_t* handle) {
 
 
 void uv_pipe_open(uv_pipe_t* pipe, uv_file file) {
-  assert(0 && "implement me");
-}
+  HANDLE os_handle = (HANDLE)_get_osfhandle(file);
+  uv_buf_t buf;
+  
+  if (os_handle == INVALID_HANDLE_VALUE) {
+    // TODO: set last error, maybe return -1?
+    return;
+  }
 
+  if (file == 0 && pipe->flags & UV_HANDLE_USE_IPC_PROTOCOL) {
+    if (uv_set_pipe_handle(pipe->loop, pipe, pipe->handle)) {
+      // TODO: set last error, maybe return -1?
+      return;
+    }
+
+    uv_pipe_connection_init(pipe);
+  }
+
+  pipe->handle = os_handle;
+}

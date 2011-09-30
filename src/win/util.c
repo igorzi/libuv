@@ -94,3 +94,26 @@ done:
 
   return retVal;
 }
+
+
+int uv_parent_pid() {
+  int parent_pid = -1;
+  HANDLE handle;
+  PROCESSENTRY32 pe;
+  int current_pid = GetCurrentProcessId();
+
+  pe.dwSize = sizeof(PROCESSENTRY32);
+  handle = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+
+  if (Process32First(handle, &pe)) {
+    do {
+      if (pe.th32ProcessID == current_pid) {
+        parent_pid = pe.th32ParentProcessID;
+        break;
+      }
+    } while( Process32Next(handle, &pe));
+  }
+
+  CloseHandle(handle);
+  return parent_pid;
+}

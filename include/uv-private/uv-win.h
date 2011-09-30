@@ -134,6 +134,7 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
   unsigned int reqs_pending;              \
   uv_alloc_cb alloc_cb;                   \
   uv_read_cb read_cb;                     \
+  uv_read2_cb read2_cb;                   \
   uv_req_t read_req;                      \
   union {                                 \
     struct { uv_stream_connection_fields };  \
@@ -170,7 +171,15 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
     uv_pipe_accept_t* pending_accepts;
 
 #define uv_pipe_connection_fields         \
-  uv_timer_t* eof_timer;
+  uv_timer_t* eof_timer;                  \
+  uv_write_t handshake_write_req;         \
+  int ipc_pid;                            \
+  int remaining_ipc_bytes;                \
+  uv_handle_type pending_ipc_handle_type; \
+  union {                                 \
+   WSAPROTOCOL_INFOW socket_protocol_info;\
+   HANDLE handle;                         \
+  };
 
 #define UV_PIPE_PRIVATE_FIELDS            \
   HANDLE handle;                          \
@@ -297,7 +306,3 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
   int is_path_dir;                        \
   char* buffer;
 
-int uv_utf16_to_utf8(const wchar_t* utf16Buffer, size_t utf16Size,
-    char* utf8Buffer, size_t utf8Size);
-int uv_utf8_to_utf16(const char* utf8Buffer, wchar_t* utf16Buffer,
-    size_t utf16Size);

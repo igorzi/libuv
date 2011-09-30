@@ -110,6 +110,25 @@ void uv_update_time(uv_loop_t*);
 int64_t uv_now(uv_loop_t*);
 
 
+typedef enum {
+  UV_UNKNOWN_HANDLE = 0,
+  UV_TCP,
+  UV_UDP,
+  UV_NAMED_PIPE,
+  UV_TTY,
+  UV_FILE,
+  UV_TIMER,
+  UV_PREPARE,
+  UV_CHECK,
+  UV_IDLE,
+  UV_ASYNC,
+  UV_ARES_TASK,
+  UV_ARES_EVENT,
+  UV_PROCESS,
+  UV_FS_EVENT
+} uv_handle_type;
+
+
 /*
  * The status parameter is 0 if the request completed successfully,
  * and should be -1 if the request was cancelled or failed.
@@ -121,6 +140,13 @@ int64_t uv_now(uv_loop_t*);
  */
 typedef uv_buf_t (*uv_alloc_cb)(uv_handle_t* handle, size_t suggested_size);
 typedef void (*uv_read_cb)(uv_stream_t* stream, ssize_t nread, uv_buf_t buf);
+/*
+ * Just like the uv_read_cb except that if the pending parameter is true
+ * then you can use uv_accept() to pull the new parameter into the process.
+ * If no handle is pending then pending will be UV_UNKNOWN_HANDLE.
+ */
+typedef void (*uv_read2_cb)(uv_pipe_t* pipe, ssize_t nread, uv_buf_t buf,
+    uv_handle_type pending);
 typedef void (*uv_write_cb)(uv_write_t* req, int status);
 typedef void (*uv_connect_cb)(uv_connect_t* req, int status);
 typedef void (*uv_shutdown_cb)(uv_shutdown_t* req, int status);
@@ -198,23 +224,6 @@ typedef enum {
   UV_EEXIST
 } uv_err_code;
 
-typedef enum {
-  UV_UNKNOWN_HANDLE = 0,
-  UV_TCP,
-  UV_UDP,
-  UV_NAMED_PIPE,
-  UV_TTY,
-  UV_FILE,
-  UV_TIMER,
-  UV_PREPARE,
-  UV_CHECK,
-  UV_IDLE,
-  UV_ASYNC,
-  UV_ARES_TASK,
-  UV_ARES_EVENT,
-  UV_PROCESS,
-  UV_FS_EVENT
-} uv_handle_type;
 
 typedef enum {
   UV_UNKNOWN_REQ = 0,
@@ -338,8 +347,8 @@ uv_buf_t uv_buf_init(char* base, size_t len);
  *
  * uv_stream is an abstract class.
  *
- * uv_stream_t is the parent class of uv_tcp_t, uv_pipe_t, uv_tty_t
- * and soon uv_file_t.
+ * uv_stream_t is the parent class of uv_tcp_t, uv_pipe_t, uv_tty_t, and
+ * soon uv_file_t.
  */
 struct uv_stream_s {
   UV_HANDLE_FIELDS
@@ -375,13 +384,11 @@ int uv_read_start(uv_stream_t*, uv_alloc_cb alloc_cb, uv_read_cb read_cb);
 
 int uv_read_stop(uv_stream_t*);
 
-typedef enum {
-  UV_STDIN = 0,
-  UV_STDOUT,
-  UV_STDERR
-} uv_std_type;
+/*
+ * Extended read methods for receiving handles over a pipe.
+ */
+int uv_read2_start(uv_stream_t*, uv_alloc_cb alloc_cb, uv_read2_cb read_cb);
 
-uv_stream_t* uv_std_handle(uv_loop_t*, uv_std_type type);
 
 /*
  * Write data to stream. Buffers are written in order. Example:
@@ -403,6 +410,9 @@ uv_stream_t* uv_std_handle(uv_loop_t*, uv_std_type type);
  */
 int uv_write(uv_write_t* req, uv_stream_t* handle, uv_buf_t bufs[], int bufcnt,
     uv_write_cb cb);
+
+int uv_write2(uv_write_t* req, uv_stream_t* handle, uv_buf_t bufs[], int bufcnt,
+    uv_stream_t* send_handle, uv_write_cb cb);
 
 /* uv_write_t is a subclass of uv_req_t */
 struct uv_write_s {
@@ -644,7 +654,7 @@ struct uv_pipe_s {
   UV_PIPE_PRIVATE_FIELDS
 };
 
-int uv_pipe_init(uv_loop_t*, uv_pipe_t* handle);
+int uv_pipe_init(uv_loop_t*, uv_pipe_t* handle, int libuv_pipe);
 
 /*
  * Opens an existing file descriptor or HANDLE as a pipe.
@@ -844,9 +854,12 @@ typedef struct uv_process_options_s {
    */
   int windows_verbatim_arguments;
 
+
+  //int windows_use_overlapped_pipes;
+
   /*
    * The user should supply pointers to initialized uv_pipe_t structs for
-   * stdio. This is used to to send or receive input from the subprocess.
+   * stdio. This is used to send or receive input from the subprocess.
    * The user is reponsible for calling uv_close on them.
    */
   uv_pipe_t* stdin_stream;

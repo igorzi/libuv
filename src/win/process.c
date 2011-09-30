@@ -739,7 +739,7 @@ void uv_process_close(uv_loop_t* loop, uv_process_t* handle) {
 
 
 static int uv_create_stdio_pipe_pair(uv_loop_t* loop, uv_pipe_t* server_pipe,
-    HANDLE* child_pipe,  DWORD server_access, DWORD child_access) {
+    HANDLE* child_pipe,  DWORD server_access, DWORD child_access, int overlapped) {
   int err;
   SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
   char pipe_name[64];
@@ -767,7 +767,7 @@ static int uv_create_stdio_pipe_pair(uv_loop_t* loop, uv_pipe_t* server_pipe,
                             0,
                             &sa,
                             OPEN_EXISTING,
-                            0,
+                            overlapped ? FILE_FLAG_OVERLAPPED : 0,
                             NULL);
 
   if (*child_pipe == INVALID_HANDLE_VALUE) {
