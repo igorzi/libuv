@@ -112,7 +112,7 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
 #define UV_PRIVATE_REQ_TYPES              \
   typedef struct uv_pipe_accept_s {       \
     UV_REQ_FIELDS                         \
-    HANDLE pipeHandle;                    \
+    HANDLE pipe_handle;                   \
     struct uv_pipe_accept_s* next_pending; \
   } uv_pipe_accept_t;                     \
                                           \
@@ -120,6 +120,8 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
     UV_REQ_FIELDS                         \
     SOCKET accept_socket;                 \
     char accept_buffer[sizeof(struct sockaddr_storage) * 2 + 32]; \
+    HANDLE event_handle;                  \
+    HANDLE wait_handle;                   \
     struct uv_tcp_accept_s* next_pending; \
   } uv_tcp_accept_t;
 
@@ -168,7 +170,15 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
     uv_pipe_accept_t* pending_accepts;
 
 #define uv_pipe_connection_fields         \
-  uv_timer_t* eof_timer;
+  uv_timer_t* eof_timer;                  \
+  uv_write_t ipc_header_write_req;        \
+  int ipc_pid;                            \
+  uint64_t remaining_ipc_bytes;           \
+  uv_handle_type pending_ipc_handle_type; \
+  union {                                 \
+   WSAPROTOCOL_INFOW ipc_socket_protocol_info;\
+   HANDLE ipc_pipe_handle;                \
+  };
 
 #define UV_PIPE_PRIVATE_FIELDS            \
   HANDLE handle;                          \

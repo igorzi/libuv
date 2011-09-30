@@ -117,12 +117,26 @@ extern LPFN_GETACCEPTEXSOCKADDRS pGetAcceptExSockAddrs;
 extern LPFN_DISCONNECTEX pDisconnectEx;
 extern LPFN_TRANSMITFILE pTransmitFile;
 
+/* Winsock extension functions (ipv4 - duplicated) */
+extern LPFN_CONNECTEX pConnectExDup;
+extern LPFN_ACCEPTEX pAcceptExDup;
+extern LPFN_GETACCEPTEXSOCKADDRS pGetAcceptExSockAddrsDup;
+extern LPFN_DISCONNECTEX pDisconnectExDup;
+extern LPFN_TRANSMITFILE pTransmitFileDup;
+
 /* Winsock extension functions (ipv6) */
 extern LPFN_CONNECTEX pConnectEx6;
 extern LPFN_ACCEPTEX pAcceptEx6;
 extern LPFN_GETACCEPTEXSOCKADDRS pGetAcceptExSockAddrs6;
 extern LPFN_DISCONNECTEX pDisconnectEx6;
 extern LPFN_TRANSMITFILE  pTransmitFile6;
+
+/* Winsock extension functions (ipv6 - duplicated) */
+extern LPFN_CONNECTEX pConnectEx6Dup;
+extern LPFN_ACCEPTEX pAcceptEx6Dup;
+extern LPFN_GETACCEPTEXSOCKADDRS pGetAcceptExSockAddrs6Dup;
+extern LPFN_DISCONNECTEX pDisconnectEx6Dup;
+extern LPFN_TRANSMITFILE  pTransmitFile6Dup;
 
 /* Whether ipv6 is supported */
 extern int uv_allow_ipv6;

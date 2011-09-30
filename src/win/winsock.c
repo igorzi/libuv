@@ -33,12 +33,26 @@ LPFN_GETACCEPTEXSOCKADDRS pGetAcceptExSockAddrs;
 LPFN_DISCONNECTEX pDisconnectEx;
 LPFN_TRANSMITFILE pTransmitFile;
 
+/* Winsock extension functions (ipv4 - duplicated) */
+LPFN_CONNECTEX pConnectExDup;
+LPFN_ACCEPTEX pAcceptExDup;
+LPFN_GETACCEPTEXSOCKADDRS pGetAcceptExSockAddrsDup;
+LPFN_DISCONNECTEX pDisconnectExDup;
+LPFN_TRANSMITFILE pTransmitFileDup;
+
 /* Winsock extension functions (ipv6) */
 LPFN_CONNECTEX pConnectEx6;
 LPFN_ACCEPTEX pAcceptEx6;
 LPFN_GETACCEPTEXSOCKADDRS pGetAcceptExSockAddrs6;
 LPFN_DISCONNECTEX pDisconnectEx6;
 LPFN_TRANSMITFILE  pTransmitFile6;
+
+/* Winsock extension functions (ipv6 - duplicated) */
+LPFN_CONNECTEX pConnectEx6Dup;
+LPFN_ACCEPTEX pAcceptEx6Dup;
+LPFN_GETACCEPTEXSOCKADDRS pGetAcceptExSockAddrs6Dup;
+LPFN_DISCONNECTEX pDisconnectEx6Dup;
+LPFN_TRANSMITFILE  pTransmitFile6Dup;
 
 /* Whether ipv6 is supported */
 int uv_allow_ipv6;
@@ -84,7 +98,10 @@ void uv_winsock_init() {
   WSADATA wsa_data;
   int errorno;
   SOCKET dummy;
+  SOCKET duplicated_dummy;
   SOCKET dummy6;
+  SOCKET duplicated_dummy6;
+  WSAPROTOCOL_INFOW socket_protocol_info;
 
   /* Initialize winsock */
   errorno = WSAStartup(MAKEWORD(2, 2), &wsa_data);
@@ -121,7 +138,40 @@ void uv_winsock_init() {
                    "WSAIoctl(SIO_GET_EXTENSION_FUNCTION_POINTER)");
   }
 
+  if (WSADuplicateSocketW(dummy, GetCurrentProcessId(),
+    &socket_protocol_info)) {
+    uv_fatal_error(WSAGetLastError(), "WSADuplicateSocketW");
+  }
+
+  duplicated_dummy = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_IP, &socket_protocol_info, 0, WSA_FLAG_OVERLAPPED);
+  if (duplicated_dummy == INVALID_SOCKET) {
+    uv_fatal_error(WSAGetLastError(), "WSASocketW");
+  }
+
+  if (!uv_get_extension_function(duplicated_dummy,
+                            wsaid_connectex,
+                            (void**)&pConnectExDup) ||
+      !uv_get_extension_function(duplicated_dummy,
+                            wsaid_acceptex,
+                            (void**)&pAcceptExDup) ||
+      !uv_get_extension_function(duplicated_dummy,
+                            wsaid_getacceptexsockaddrs,
+                            (void**)&pGetAcceptExSockAddrsDup) ||
+      !uv_get_extension_function(duplicated_dummy,
+                            wsaid_disconnectex,
+                            (void**)&pDisconnectExDup) ||
+      !uv_get_extension_function(duplicated_dummy,
+                            wsaid_transmitfile,
+                            (void**)&pTransmitFileDup)) {
+    uv_fatal_error(WSAGetLastError(),
+                   "WSAIoctl(SIO_GET_EXTENSION_FUNCTION_POINTER)");
+  }
+
   if (closesocket(dummy) == SOCKET_ERROR) {
+    uv_fatal_error(WSAGetLastError(), "closesocket");
+  }
+
+  if (closesocket(duplicated_dummy) == SOCKET_ERROR) {
     uv_fatal_error(WSAGetLastError(), "closesocket");
   }
 
@@ -148,7 +198,40 @@ void uv_winsock_init() {
       uv_allow_ipv6 = FALSE;
     }
 
+    if (WSADuplicateSocketW(dummy6, GetCurrentProcessId(),
+      &socket_protocol_info)) {
+      uv_fatal_error(WSAGetLastError(), "WSADuplicateSocketW");
+    }
+
+    duplicated_dummy6 = WSASocketW(AF_INET6, SOCK_STREAM, IPPROTO_IP, &socket_protocol_info, 0, WSA_FLAG_OVERLAPPED);
+    if (duplicated_dummy6 == INVALID_SOCKET) {
+      uv_fatal_error(WSAGetLastError(), "WSASocketW");
+    }
+
+    if (!uv_get_extension_function(duplicated_dummy6,
+                              wsaid_connectex,
+                              (void**)&pConnectExDup) ||
+        !uv_get_extension_function(duplicated_dummy6,
+                              wsaid_acceptex,
+                              (void**)&pAcceptExDup) ||
+        !uv_get_extension_function(duplicated_dummy6,
+                              wsaid_getacceptexsockaddrs,
+                              (void**)&pGetAcceptExSockAddrsDup) ||
+        !uv_get_extension_function(duplicated_dummy6,
+                              wsaid_disconnectex,
+                              (void**)&pDisconnectExDup) ||
+        !uv_get_extension_function(duplicated_dummy6,
+                              wsaid_transmitfile,
+                              (void**)&pTransmitFileDup)) {
+      uv_fatal_error(WSAGetLastError(),
+                     "WSAIoctl(SIO_GET_EXTENSION_FUNCTION_POINTER)");
+    }
+
     if (closesocket(dummy6) == SOCKET_ERROR) {
+      uv_fatal_error(WSAGetLastError(), "closesocket");
+    }
+
+    if (closesocket(duplicated_dummy6) == SOCKET_ERROR) {
       uv_fatal_error(WSAGetLastError(), "closesocket");
     }
   }
