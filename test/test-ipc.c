@@ -49,17 +49,19 @@ static uv_buf_t on_alloc(uv_handle_t* handle, size_t suggested_size) {
 }
 
 
-static void on_read(uv_stream_t* pipe, ssize_t nread, uv_buf_t buf) {
+static void on_read(uv_pipe_t* pipe, ssize_t nread, uv_buf_t buf,
+    uv_handle_type pending) {
   int r;
   uv_buf_t outbuf;
   /* listen on the handle provided.... */
 
   if (nread) {
-    outbuf = uv_buf_init("world\n", 6);
-    r = uv_write(&write_req, pipe, &outbuf, 1, NULL);
-    ASSERT(r == 0);
-
     fprintf(stderr, "got %d bytes\n", (int)nread);
+
+    outbuf = uv_buf_init("world\n", 6);
+    r = uv_write(&write_req, (uv_stream_t*)pipe, &outbuf, 1, NULL);
+    ASSERT(r == 0);
+    ASSERT(pending == UV_TCP);
   }
 
   if (buf.base) {
@@ -92,7 +94,7 @@ TEST_IMPL(ipc) {
   r = uv_spawn(uv_default_loop(), &process, options);
   ASSERT(r == 0);
 
-  uv_read_start((uv_stream_t*)&channel, on_alloc, on_read);
+  uv_read2_start((uv_stream_t*)&channel, on_alloc, on_read);
 
   r = uv_run(uv_default_loop());
   ASSERT(r == 0);
