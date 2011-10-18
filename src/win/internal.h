@@ -137,6 +137,8 @@ void uv_tcp_endgame(uv_loop_t* loop, uv_tcp_t* handle);
 
 int uv_tcp_import(uv_tcp_t* tcp, WSAPROTOCOL_INFOW* socket_protocol_info);
 
+void uv_tcp_maybe_queue_pending_accepts(uv_loop_t* loop, uv_tcp_t* server);
+
 
 /*
  * UDP

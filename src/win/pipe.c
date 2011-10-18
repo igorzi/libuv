@@ -999,7 +999,7 @@ void uv_process_pipe_read_req(uv_loop_t* loop, uv_pipe_t* handle,
           }
 
           assert(bytes == sizeof(ipc_frame.header));
-          assert(ipc_frame.header.flags <= UV_IPC_UV_STREAM | UV_IPC_RAW_DATA);
+          assert(ipc_frame.header.flags <= (UV_IPC_UV_STREAM | UV_IPC_RAW_DATA));
 
           if (ipc_frame.header.flags & UV_IPC_UV_STREAM) {
             assert(avail - sizeof(ipc_frame.header) >=

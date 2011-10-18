@@ -106,6 +106,8 @@ int uv_tcp_init(uv_loop_t* loop, uv_tcp_t* handle) {
   handle->func_acceptex = NULL;
   handle->func_connectex = NULL;
 
+  handle->pending_accepts_queued = 0;
+
   loop->counters.tcp_init++;
 
   return 0;
@@ -291,6 +293,9 @@ static void uv_tcp_queue_accept(uv_tcp_t* handle, uv_tcp_accept_t* req) {
     req->overlapped.hEvent = (HANDLE) ((DWORD) req->event_handle | 1);
   }
 
+  req->queued = 1;
+  handle->pending_accepts_queued++;
+
   success = handle->func_acceptex(handle->socket,
                                   accept_socket,
                                   (void*)req->accept_buffer,
@@ -437,6 +442,7 @@ int uv_tcp_listen(uv_tcp_t* handle, int backlog, uv_connection_cb cb) {
   for (i = 0; i < uv_simultaneous_server_accepts; i++) {
     req = &handle->accept_reqs[i];
     uv_req_init(loop, (uv_req_t*)req);
+    req->queued = 0;
     req->type = UV_ACCEPT;
     req->accept_socket = INVALID_SOCKET;
     req->data = handle;
@@ -450,9 +456,10 @@ int uv_tcp_listen(uv_tcp_t* handle, int backlog, uv_connection_cb cb) {
     } else {
       req->event_handle = NULL;
     }
-
-    uv_tcp_queue_accept(handle, req);
   }
+
+  /* just queue 1 accept. */
+  uv_tcp_queue_accept(handle, &handle->accept_reqs[0]);
 
   return 0;
 }
@@ -488,14 +495,43 @@ int uv_tcp_accept(uv_tcp_t* server, uv_tcp_t* client) {
   server->pending_accepts = req->next_pending;
   req->next_pending = NULL;
   req->accept_socket = INVALID_SOCKET;
-
-  if (!(server->flags & UV_HANDLE_CLOSING)) {
-    uv_tcp_queue_accept(server, req);
-  }
+  req->queued = 0;
 
   active_tcp_streams++;
 
   return rv;
+}
+
+
+void uv_tcp_maybe_queue_pending_accepts(uv_loop_t* loop, uv_tcp_t* server) {
+  int number_to_queue, queued;
+  unsigned int i;
+  uv_tcp_accept_t* req;
+
+  if (!server) {
+    return;
+  }
+
+  if (!(server->flags & UV_HANDLE_LISTENING)) {
+    return;
+  }
+
+  if (loop->accepts_dequeued_from_iocp < server->pending_accepts_queued) {
+    /* enough accepts are still queued - nothing to do */
+  } else {
+    number_to_queue = 2 * (loop->accepts_dequeued_from_iocp - server->pending_accepts_queued);
+    queued = 0;
+    for (i = 0; i < uv_simultaneous_server_accepts; i++) {
+      if (queued == number_to_queue) {
+        break;
+      }
+      req = &server->accept_reqs[i];
+      if (!req->queued) {
+        uv_tcp_queue_accept(server, req);
+        queued++;
+      }
+    }
+  }
 }
 
 
@@ -868,6 +904,14 @@ void uv_process_tcp_accept_req(uv_loop_t* loop, uv_tcp_t* handle,
   uv_tcp_accept_t* req = (uv_tcp_accept_t*) raw_req;
 
   assert(handle->type == UV_TCP);
+
+  handle->pending_accepts_queued--;
+  loop->accepts_dequeued_from_iocp++;
+
+  /* hack: remember the server so that we can run
+   * uv_tcp_maybe_queue_pending_accepts on it after processing all reqs.
+   */
+  loop->pending_tcp_server = handle;
 
   /* If handle->accepted_socket is not a valid socket, then */
   /* uv_queue_accept must have failed. This is a serious error. We stop */

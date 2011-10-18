@@ -102,6 +102,8 @@ static uv_req_t* uv_remove_pending_req(uv_loop_t* loop) {
 void uv_process_reqs(uv_loop_t* loop) {
   uv_req_t* req;
 
+  loop->accepts_dequeued_from_iocp = 0;
+
   while (req = uv_remove_pending_req(loop)) {
     switch (req->type) {
       case UV_READ:
@@ -179,4 +181,6 @@ void uv_process_reqs(uv_loop_t* loop) {
         assert(0);
     }
   }
+
+  uv_tcp_maybe_queue_pending_accepts(loop, loop->pending_tcp_server);
 }

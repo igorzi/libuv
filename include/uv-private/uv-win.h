@@ -146,7 +146,9 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
   uv_idle_t* next_idle_handle;                                                \
   ares_channel ares_chan;                                                     \
   int ares_active_sockets;                                                    \
-  uv_timer_t ares_polling_timer;
+  uv_timer_t ares_polling_timer;                                              \
+  int accepts_dequeued_from_iocp;                                             \
+  uv_tcp_t* pending_tcp_server;
 
 #define UV_REQ_TYPE_PRIVATE               \
   /* TODO: remove the req suffix */       \
@@ -189,6 +191,7 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
                                           \
   typedef struct uv_tcp_accept_s {        \
     UV_REQ_FIELDS                         \
+    int queued;                           \
     SOCKET accept_socket;                 \
     char accept_buffer[sizeof(struct sockaddr_storage) * 2 + 32]; \
     HANDLE event_handle;                  \
@@ -214,6 +217,7 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
 #define uv_tcp_server_fields              \
   uv_tcp_accept_t* accept_reqs;           \
   uv_tcp_accept_t* pending_accepts;       \
+  int pending_accepts_queued;             \
   LPFN_ACCEPTEX func_acceptex;
 
 #define uv_tcp_connection_fields          \
