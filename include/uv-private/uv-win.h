@@ -169,7 +169,10 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
   struct uv_req_s* next_req;
 
 #define UV_WRITE_PRIVATE_FIELDS           \
-  int ipc_header;
+  int ipc_header;                         \
+  uv_buf_t* write_buffer;                 \
+  HANDLE event_handle;                    \
+  HANDLE wait_handle;
 
 #define UV_CONNECT_PRIVATE_FIELDS         \
   /* empty */
@@ -194,7 +197,13 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
     HANDLE event_handle;                  \
     HANDLE wait_handle;                   \
     struct uv_tcp_accept_s* next_pending; \
-  } uv_tcp_accept_t;
+  } uv_tcp_accept_t;                      \
+                                          \
+  typedef struct uv_read_s {              \
+    UV_REQ_FIELDS                         \
+    HANDLE event_handle;                  \
+    HANDLE wait_handle;                   \
+  } uv_read_t;
 
 #define uv_stream_connection_fields       \
   unsigned int write_reqs_pending;        \
@@ -205,7 +214,7 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
 
 #define UV_STREAM_PRIVATE_FIELDS          \
   unsigned int reqs_pending;              \
-  uv_req_t read_req;                      \
+  uv_read_t read_req;                     \
   union {                                 \
     struct { uv_stream_connection_fields };  \
     struct { uv_stream_server_fields     };  \

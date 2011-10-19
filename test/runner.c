@@ -108,6 +108,7 @@ int run_test(const char* test, int timeout, int benchmark_output) {
 
     if (process_start(task->task_name,
                       task->process_name,
+                      0,
                       &processes[process_count]) == -1) {
       snprintf(errmsg,
                sizeof errmsg,
@@ -134,6 +135,7 @@ int run_test(const char* test, int timeout, int benchmark_output) {
 
     if (process_start(task->task_name,
                       task->process_name,
+                      1,
                       &processes[process_count]) == -1) {
       snprintf(errmsg,
                sizeof errmsg,

@@ -52,46 +52,74 @@ void platform_init(int argc, char **argv) {
 }
 
 
-int process_start(char *name, char *part, process_info_t *p) {
+int process_start(char *name, char *part, int pipe_stdio, process_info_t *p) {
   HANDLE file = INVALID_HANDLE_VALUE;
   HANDLE nul = INVALID_HANDLE_VALUE;
+  HANDLE pipe_in_read = INVALID_HANDLE_VALUE;
+  HANDLE pipe_in_write = INVALID_HANDLE_VALUE;
+  HANDLE pipe_out_read = INVALID_HANDLE_VALUE;
+  HANDLE pipe_out_write = INVALID_HANDLE_VALUE;
   WCHAR path[MAX_PATH], filename[MAX_PATH];
   WCHAR image[MAX_PATH + 1];
   WCHAR args[MAX_PATH * 2];
   STARTUPINFOW si;
   PROCESS_INFORMATION pi;
   DWORD result;
+  SECURITY_ATTRIBUTES sa;
 
-  if (GetTempPathW(sizeof(path) / sizeof(WCHAR), (WCHAR*)&path) == 0)
-    goto error;
-  if (GetTempFileNameW((WCHAR*)&path, L"uv", 0, (WCHAR*)&filename) == 0)
-    goto error;
+  memset((void*)&si, 0, sizeof(si));
+  si.cb = sizeof(si);
+  si.dwFlags = STARTF_USESTDHANDLES;
 
-  file = CreateFileW((WCHAR*)filename,
-                     GENERIC_READ | GENERIC_WRITE,
-                     0,
-                     NULL,
-                     CREATE_ALWAYS,
-                     FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE,
-                     NULL);
-  if (file == INVALID_HANDLE_VALUE)
-    goto error;
+  if (!pipe_stdio) {
+    if (GetTempPathW(sizeof(path) / sizeof(WCHAR), (WCHAR*)&path) == 0)
+      goto error;
+    if (GetTempFileNameW((WCHAR*)&path, L"uv", 0, (WCHAR*)&filename) == 0)
+      goto error;
 
-  if (!SetHandleInformation(file, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
-    goto error;
+    file = CreateFileW((WCHAR*)filename,
+                       GENERIC_READ | GENERIC_WRITE,
+                       0,
+                       NULL,
+                       CREATE_ALWAYS,
+                       FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE,
+                       NULL);
+    if (file == INVALID_HANDLE_VALUE)
+      goto error;
 
-  nul = CreateFileA("nul",
-                    GENERIC_READ,
-                    FILE_SHARE_READ | FILE_SHARE_WRITE,
-                    NULL,
-                    OPEN_EXISTING,
-                    FILE_ATTRIBUTE_NORMAL,
-                    NULL);
-  if (nul == INVALID_HANDLE_VALUE)
-    goto error;
+    if (!SetHandleInformation(file, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
+      goto error;
 
-  if (!SetHandleInformation(nul, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
-    goto error;
+    nul = CreateFileA("nul",
+                      GENERIC_READ,
+                      FILE_SHARE_READ | FILE_SHARE_WRITE,
+                      NULL,
+                      OPEN_EXISTING,
+                      FILE_ATTRIBUTE_NORMAL,
+                      NULL);
+    if (nul == INVALID_HANDLE_VALUE)
+      goto error;
+
+    if (!SetHandleInformation(nul, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
+      goto error;
+
+    si.hStdInput = nul;
+    si.hStdOutput = file;
+    si.hStdError = file;
+  } else {
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES); 
+    sa.bInheritHandle = TRUE; 
+    sa.lpSecurityDescriptor = NULL;
+
+    CreatePipe(&pipe_in_read, &pipe_in_write, &sa, 0);
+    SetHandleInformation(pipe_in_write, HANDLE_FLAG_INHERIT, 0);
+    CreatePipe(&pipe_out_read, &pipe_out_write, &sa, 0);
+    SetHandleInformation(pipe_out_read, HANDLE_FLAG_INHERIT, 0);
+
+    si.hStdInput = pipe_in_read;
+    si.hStdOutput = pipe_out_write;
+    si.hStdError = pipe_out_write;
+  }
 
   result = GetModuleFileNameW(NULL, (WCHAR*)&image, sizeof(image) / sizeof(WCHAR));
   if (result == 0 || result == sizeof(image))
@@ -99,29 +127,22 @@ int process_start(char *name, char *part, process_info_t *p) {
 
   if (part) {
     if (_snwprintf((wchar_t*)args,
-                   sizeof(args) / sizeof(wchar_t),
-                   L"\"%s\" %S %S",
-                   image,
-                   name,
-                   part) < 0) {
+                    sizeof(args) / sizeof(wchar_t),
+                    L"\"%s\" %S %S",
+                    image,
+                    name,
+                    part) < 0) {
       goto error;
     }
   } else {
     if (_snwprintf((wchar_t*)args,
-                   sizeof(args) / sizeof(wchar_t),
-                   L"\"%s\" %S",
-                   image,
-                   name) < 0) {
+                    sizeof(args) / sizeof(wchar_t),
+                    L"\"%s\" %S",
+                    image,
+                    name) < 0) {
       goto error;
     }
   }
-
-  memset((void*)&si, 0, sizeof(si));
-  si.cb = sizeof(si);
-  si.dwFlags = STARTF_USESTDHANDLES;
-  si.hStdInput = nul;
-  si.hStdOutput = file;
-  si.hStdError = file;
 
   if (!CreateProcessW(image, args, NULL, NULL, TRUE,
                       0, NULL, NULL, &si, &pi))
@@ -129,11 +150,16 @@ int process_start(char *name, char *part, process_info_t *p) {
 
   CloseHandle(pi.hThread);
 
-  SetHandleInformation(nul, HANDLE_FLAG_INHERIT, 0);
-  SetHandleInformation(file, HANDLE_FLAG_INHERIT, 0);
+  if (!pipe_stdio) {
+    SetHandleInformation(nul, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(file, HANDLE_FLAG_INHERIT, 0);
+    p->stdio_in = nul;
+    p->stdio_out = file;
+  } else {
+    p->stdio_in = pipe_in_write;
+    p->stdio_out = pipe_out_read;
+  }
 
-  p->stdio_in = nul;
-  p->stdio_out = file;
   p->process = pi.hProcess;
   p->name = name;
 
@@ -144,6 +170,14 @@ error:
     CloseHandle(file);
   if (nul != INVALID_HANDLE_VALUE)
     CloseHandle(nul);
+  if (pipe_in_read != INVALID_HANDLE_VALUE)
+    CloseHandle(pipe_in_read);
+  if (pipe_in_write != INVALID_HANDLE_VALUE)
+    CloseHandle(pipe_in_write);
+  if (pipe_out_read != INVALID_HANDLE_VALUE)
+    CloseHandle(pipe_out_read);
+  if (pipe_out_write != INVALID_HANDLE_VALUE)
+    CloseHandle(pipe_out_write);
 
   return -1;
 }
