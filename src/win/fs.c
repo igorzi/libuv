@@ -492,7 +492,12 @@ void fs__readdir(uv_fs_t* req, const wchar_t* path, int flags) {
 void fs__stat(uv_fs_t* req, const wchar_t* path) {
   int result;
 
-  result = _wstati64(path, &req->stat);
+  fs__open(req, path, _O_RDONLY, 0);
+  if (req->result == -1) {
+    return;
+  }
+
+  result = _fstati64(req->result, &req->stat);
   if (result == -1) {
     req->ptr = NULL;
   } else {
@@ -500,6 +505,8 @@ void fs__stat(uv_fs_t* req, const wchar_t* path) {
   }
 
   SET_REQ_RESULT(req, result);
+
+  _close(req->result);
 }
 
 
@@ -905,10 +912,47 @@ static DWORD WINAPI uv_fs_thread_proc(void* parameter) {
 int uv_fs_open(uv_loop_t* loop, uv_fs_t* req, const char* path, int flags,
     int mode, uv_fs_cb cb) {
   wchar_t* pathw;
-  int size;
+  const wchar_t lfs_long_unc_prefix[] = L"\\\\?\\";
+  const wchar_t network_long_unc_prefix[] = L"\\\\?\\UNC\\";
+  int size, offset = 0;
+  int convert_to_local_long_unc = 0, convert_to_network_long_unc = 0;
 
-  /* Convert to UTF16. */
-  UTF8_TO_UTF16(path, pathw);
+  size = uv_utf8_to_utf16(path, NULL, 0) * sizeof(wchar_t);
+
+  if (size >= 2) {
+    if (isalpha(path[0]) && path[1] == ':') {
+      /* 
+       * path is local filesystem path, which needs to be converted
+       * to long UNC path.
+       */
+      convert_to_local_long_unc = 1;
+      offset = COUNTOF(lfs_long_unc_prefix);
+    } else if (memcmp(path, "\\\\", 2) == 0 &&
+        (size < 4 || memcmp(path + 2, "?\\", 2) != 0)) {
+      /* 
+        * path is network UNC path, which needs to be converted
+        * to long UNC path.
+        */
+      convert_to_network_long_unc = 1;
+      offset = COUNTOF(network_long_unc_prefix);
+    }
+  } 
+
+  pathw = (wchar_t*)malloc(size + offset);
+  if (!pathw) {
+    uv_fatal_error(ERROR_OUTOFMEMORY, "malloc");
+  }
+
+  if (!uv_utf8_to_utf16(path, pathw + offset, size / sizeof(wchar_t))) {
+    uv__set_sys_error(loop, GetLastError());
+    return -1;
+  }
+
+  if (convert_to_local_long_unc) {
+    memcpy(pathw, lfs_long_unc_prefix, sizeof(lfs_long_unc_prefix));
+  } else if (convert_to_network_long_unc) {
+    memcpy(pathw, network_long_unc_prefix, sizeof(network_long_unc_prefix));
+  }
 
   if (cb) {
     uv_fs_req_init_async(loop, req, UV_FS_OPEN, path, pathw, cb);
@@ -1517,3 +1561,4 @@ void uv_fs_req_cleanup(uv_fs_t* req) {
 
   req->flags |= UV_FS_CLEANEDUP;
 }
+
