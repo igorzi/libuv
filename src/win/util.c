@@ -47,7 +47,12 @@
 
 
 static char *process_title;
+static CRITICAL_SECTION process_title_lock;
 
+
+void uv_util_init() {
+  InitializeCriticalSection(&process_title_lock);
+}
 
 int uv_utf16_to_utf8(const wchar_t* utf16Buffer, size_t utf16Size,
     char* utf8Buffer, size_t utf8Size) {
@@ -297,8 +302,10 @@ uv_err_t uv_set_process_title(const char* title) {
     goto done;
   }
 
+  EnterCriticalSection(&process_title_lock);
   free(process_title);
   process_title = strdup(title);
+  LeaveCriticalSection(&process_title_lock);
 
   err = uv_ok_;
 
@@ -339,6 +346,7 @@ static int uv__get_process_title() {
 
 
 uv_err_t uv_get_process_title(char* buffer, size_t size) {
+  EnterCriticalSection(&process_title_lock);
   /*
    * If the process_title was never read before nor explicitly set,
    * we must query it with getConsoleTitleW
@@ -349,6 +357,7 @@ uv_err_t uv_get_process_title(char* buffer, size_t size) {
   
   assert(process_title);
   strncpy(buffer, process_title, size);  
+  LeaveCriticalSection(&process_title_lock);
 
   return uv_ok_;
 }

@@ -27,6 +27,8 @@ TEST_IMPL(process_title) {
   char buffer[512];
   uv_err_t err;
 
+  uv_default_loop();
+
   err = uv_get_process_title(buffer, sizeof(buffer));
   ASSERT(UV_OK == err.code);
 

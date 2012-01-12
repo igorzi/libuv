@@ -34,6 +34,8 @@ TEST_IMPL(platform_output) {
   int i;
   uv_err_t err;
 
+  uv_default_loop();
+
   err = uv_get_process_title(buffer, sizeof(buffer));
   ASSERT(UV_OK == err.code);
   fprintf(stderr, "uv_get_process_title: %s\n", buffer);
