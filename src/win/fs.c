@@ -323,7 +323,11 @@ void fs__read(uv_fs_t* req, uv_file file, void *buf, size_t length,
   if (ReadFile(handle, buf, length, &bytes, overlapped_ptr)) {
     SET_REQ_RESULT(req, bytes);
   } else {
-    SET_REQ_WIN32_ERROR(req, GetLastError());
+    if (GetLastError() == ERROR_HANDLE_EOF) {
+      SET_REQ_RESULT(req, 0);
+    } else {
+      SET_REQ_WIN32_ERROR(req, GetLastError());
+    }
   }
 }
 
