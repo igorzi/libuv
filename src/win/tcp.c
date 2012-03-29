@@ -199,6 +199,11 @@ void uv_tcp_endgame(uv_loop_t* loop, uv_tcp_t* handle) {
     assert(!(handle->flags & UV_HANDLE_CLOSED));
     handle->flags |= UV_HANDLE_CLOSED;
 
+    if (!(handle->flags & UV_HANDLE_TCP_SOCKET_CLOSED)) {
+      closesocket(handle->socket);
+      handle->flags |= UV_HANDLE_TCP_SOCKET_CLOSED;
+    }
+
     if (!(handle->flags & UV_HANDLE_CONNECTION) && handle->accept_reqs) {
       if (handle->flags & UV_HANDLE_EMULATE_IOCP) {
         for (i = 0; i < uv_simultaneous_server_accepts; i++) {
@@ -353,7 +358,7 @@ static void uv_tcp_queue_accept(uv_tcp_t* handle, uv_tcp_accept_t* req) {
   /* Prepare the overlapped structure. */
   memset(&(req->overlapped), 0, sizeof(req->overlapped));
   if (handle->flags & UV_HANDLE_EMULATE_IOCP) {
-    req->overlapped.hEvent = (HANDLE) ((DWORD) req->event_handle | 1);
+    req->overlapped.hEvent = (HANDLE) ((ULONG_PTR) req->event_handle | 1);
   }
 
   success = handle->func_acceptex(handle->socket,
@@ -431,7 +436,7 @@ static void uv_tcp_queue_read(uv_loop_t* loop, uv_tcp_t* handle) {
   memset(&(req->overlapped), 0, sizeof(req->overlapped));
   if (handle->flags & UV_HANDLE_EMULATE_IOCP) {
     assert(req->event_handle);
-    req->overlapped.hEvent = (HANDLE) ((DWORD) req->event_handle | 1);
+    req->overlapped.hEvent = (HANDLE) ((ULONG_PTR) req->event_handle | 1);
   }
 
   flags = 0;
@@ -832,7 +837,7 @@ int uv_tcp_write(uv_loop_t* loop, uv_write_t* req, uv_tcp_t* handle,
     if (!req->event_handle) {
       uv_fatal_error(GetLastError(), "CreateEvent");
     }
-    req->overlapped.hEvent = (HANDLE) ((DWORD) req->event_handle | 1);
+    req->overlapped.hEvent = (HANDLE) ((ULONG_PTR) req->event_handle | 1);
   }
 
   result = WSASend(handle->socket,
@@ -1177,8 +1182,6 @@ int uv_tcp_duplicate_socket(uv_tcp_t* handle, int pid,
      * this is a listening socket, we assume that the other process will
      * be accepting connections on it.  So, before sharing the socket
      * with another process, we call listen here in the parent process.
-     * This needs to be modified if the socket is shared with
-     * another process for anything other than accepting connections.
      */
 
     if (!(handle->flags & UV_HANDLE_LISTENING)) {
@@ -1238,85 +1241,38 @@ int uv_tcp_simultaneous_accepts(uv_tcp_t* handle, int enable) {
 }
 
 
-static DWORD WINAPI tcp_close_thread_proc(void* parameter) {
-  int errno;
-  DWORD no = 0;
-  struct linger l = {1, 1};
-  uv_tcp_t* tcp = (uv_tcp_t*)parameter;
-
-  /* Set linger on */
-  setsockopt(tcp->socket, SOL_SOCKET, SO_LINGER, (const char*)&l, sizeof l);
-
-  /* Change to blocking mode */
-  ioctlsocket(tcp->socket, FIONBIO, &no);
-
-  /* 
-   * Close the socket.  This will block until the graceful close is done
-   * or until 1 sec timeout expires.
-   */
-  closesocket(tcp->socket);
-
-  POST_COMPLETION_FOR_REQ(tcp->loop, &tcp->close_req);
-  return 0;
-}
-
-
-void uv_tcp_process_close(uv_loop_t* loop, uv_tcp_t* tcp) {
-  tcp->reqs_pending--;
-  if (tcp->reqs_pending == 0) {
-    uv_want_endgame(tcp->loop, (uv_handle_t*)tcp);
-  }
-}
-
-
 void uv_tcp_close(uv_tcp_t* tcp) {
-  int no_lsps;
+  int non_ifs_lsp;
+  int close_socket = 1;
 
   /*
    * In order for winsock to do a graceful close there must not be
    * any pending reads.
    */
   if (tcp->flags & UV_HANDLE_READ_PENDING) {
-    /* Check if we have any LSPs stacked on top of TCP */
-    no_lsps = (tcp->flags & UV_HANDLE_IPV6) ? uv_tcp_no_lsps_ipv6 :
-      uv_tcp_no_lsps_ipv4;
-    if (no_lsps) {
-      /* No LSPs, safe to cancel the pending read with CancelIo */
-      CancelIo((HANDLE)tcp->socket);
-    } else if (!(tcp->flags & UV_HANDLE_SHARED_TCP_SOCKET)) {
+    /* Check if we have any non-IFS LSPs stacked on top of TCP */
+    non_ifs_lsp = (tcp->flags & UV_HANDLE_IPV6) ? uv_tcp_non_ifs_lsp_ipv6 :
+      uv_tcp_non_ifs_lsp_ipv4;
+    if (!non_ifs_lsp && (tcp->flags & UV_HANDLE_SHARED_TCP_SOCKET)) {
       /* 
-       * shutdown ensures that the socket is gracefully closed
-       * (with pending reads).  It's safe to do shutdown here because
-       * we're closing non-shared connection socket.
+       * Shared socket with no non-IFS LSPs, request to cancel pending I/O.
+       * The socket will be closed inside endgame.
        */
+      CancelIo((HANDLE)tcp->socket);
+      close_socket = 0;
+    } else {
       shutdown(tcp->socket, SD_SEND);
       tcp->flags |= UV_HANDLE_SHUT;
-    } else {
-      /*
-       * Shared connection socket with pending read.  We can't call shutdown
-       * because the connection might still be used from another process.
-       * Instead we turn linger on and call blocking closesocket
-       * on a thread.
-       */
-      tcp->flags &= ~(UV_HANDLE_READING | UV_HANDLE_LISTENING);
-
-      uv_req_init(tcp->loop, (uv_req_t*)&tcp->close_req);
-      tcp->close_req.type = UV_TCP_CLOSE;
-      tcp->close_req.data = tcp;
-
-      if (!QueueUserWorkItem(tcp_close_thread_proc,
-                             tcp,
-                             WT_EXECUTELONGFUNCTION)) {
-        uv_fatal_error(GetLastError(), "QueueUserWorkItem");
-      }
-
-      tcp->reqs_pending++;
-      return;
     }
   }
 
   tcp->flags &= ~(UV_HANDLE_READING | UV_HANDLE_LISTENING);
-  closesocket(tcp->socket);
+
+  if (close_socket) {
+    closesocket(tcp->socket);
+    tcp->flags |= UV_HANDLE_TCP_SOCKET_CLOSED;
+  }
+
   if (tcp->reqs_pending == 0) {
     uv_want_endgame(tcp->loop, (uv_handle_t*)tcp);
   }

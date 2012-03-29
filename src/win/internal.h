@@ -73,6 +73,7 @@ void uv_process_timers(uv_loop_t* loop);
 #define UV_HANDLE_TCP_KEEPALIVE                 0x04000000
 #define UV_HANDLE_TCP_SINGLE_ACCEPT             0x08000000
 #define UV_HANDLE_TCP_ACCEPT_STATE_CHANGING     0x10000000
+#define UV_HANDLE_TCP_SOCKET_CLOSED             0x20000000
 
 void uv_want_endgame(uv_loop_t* loop, uv_handle_t* handle);
 void uv_process_endgames(uv_loop_t* loop);
@@ -148,9 +149,6 @@ int uv_tcp_import(uv_tcp_t* tcp, WSAPROTOCOL_INFOW* socket_protocol_info,
 
 int uv_tcp_duplicate_socket(uv_tcp_t* handle, int pid,
     LPWSAPROTOCOL_INFOW protocol_info);
-
-void uv_tcp_process_close(uv_loop_t* loop, uv_tcp_t* tcp);
-void uv_tcp_close(uv_tcp_t* tcp);
 
 
 /*
@@ -340,10 +338,6 @@ int WSAAPI uv_wsarecvfrom_workaround(SOCKET socket, WSABUF* buffers,
 
 /* Whether ipv6 is supported */
 extern int uv_allow_ipv6;
-
-/* Whether there are any LSPs stacked on TCP */
-extern int uv_tcp_no_lsps_ipv4;
-extern int uv_tcp_no_lsps_ipv6;
 
 /* Whether there are any non-IFS LSPs stacked on TCP */
 extern int uv_tcp_non_ifs_lsp_ipv4;

@@ -167,10 +167,6 @@ void uv_process_reqs(uv_loop_t* loop) {
         uv_process_fs_event_req(loop, req, (uv_fs_event_t*) req->data);
         break;
 
-      case UV_TCP_CLOSE:
-        uv_tcp_process_close(loop, (uv_tcp_t*) req->data);
-        break;
-
       default:
         assert(0);
     }

@@ -28,10 +28,6 @@
 /* Whether ipv6 is supported */
 int uv_allow_ipv6;
 
-/* Whether there are any LSPs stacked on TCP */
-int uv_tcp_no_lsps_ipv4;
-int uv_tcp_no_lsps_ipv6;
-
 /* Whether there are any non-IFS LSPs stacked on TCP */
 int uv_tcp_non_ifs_lsp_ipv4;
 int uv_tcp_non_ifs_lsp_ipv6;
@@ -121,10 +117,6 @@ void uv_winsock_init() {
     uv_tcp_non_ifs_lsp_ipv4 = 1;
   }
 
-  if (protocol_info.ProtocolChain.ChainLen == 1) {
-    uv_tcp_no_lsps_ipv4 = 1;
-  }
-
   if (closesocket(dummy) == SOCKET_ERROR) {
     uv_fatal_error(WSAGetLastError(), "closesocket");
   }
@@ -145,10 +137,6 @@ void uv_winsock_init() {
 
     if (!(protocol_info.dwServiceFlags1 & XP1_IFS_HANDLES)) {
       uv_tcp_non_ifs_lsp_ipv6 = 1;
-    }
-
-    if (protocol_info.ProtocolChain.ChainLen == 1) {
-      uv_tcp_no_lsps_ipv6 = 1;
     }
 
     if (closesocket(dummy) == SOCKET_ERROR) {

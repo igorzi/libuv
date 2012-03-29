@@ -214,8 +214,7 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
   UV_PROCESS_EXIT,                        \
   UV_PROCESS_CLOSE,                       \
   UV_UDP_RECV,                            \
-  UV_FS_EVENT_REQ,                        \
-  UV_TCP_CLOSE
+  UV_FS_EVENT_REQ
 
 #define UV_REQ_PRIVATE_FIELDS             \
   union {                                 \
@@ -287,10 +286,7 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
 
 #define uv_tcp_connection_fields          \
   uv_buf_t read_buffer;                   \
-  LPFN_CONNECTEX func_connectex;          \
-  struct uv_tcp_close_s {                 \
-    UV_REQ_FIELDS                         \
-  } close_req;
+  LPFN_CONNECTEX func_connectex;
 
 #define UV_TCP_PRIVATE_FIELDS             \
   SOCKET socket;                          \
