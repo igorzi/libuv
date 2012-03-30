@@ -1250,19 +1250,23 @@ void uv_tcp_close(uv_tcp_t* tcp) {
    * any pending reads.
    */
   if (tcp->flags & UV_HANDLE_READ_PENDING) {
-    /* Check if we have any non-IFS LSPs stacked on top of TCP */
-    non_ifs_lsp = (tcp->flags & UV_HANDLE_IPV6) ? uv_tcp_non_ifs_lsp_ipv6 :
-      uv_tcp_non_ifs_lsp_ipv4;
-    if (!non_ifs_lsp && (tcp->flags & UV_HANDLE_SHARED_TCP_SOCKET)) {
-      /* 
-       * Shared socket with no non-IFS LSPs, request to cancel pending I/O.
-       * The socket will be closed inside endgame.
-       */
-      CancelIo((HANDLE)tcp->socket);
-      close_socket = 0;
-    } else {
+    /* Just do shutdown on non-shared sockets, which ensures graceful close. */
+    if (!(tcp->flags & UV_HANDLE_SHARED_TCP_SOCKET)) {
       shutdown(tcp->socket, SD_SEND);
       tcp->flags |= UV_HANDLE_SHUT;
+    } else {
+      /* Check if we have any non-IFS LSPs stacked on top of TCP */
+      non_ifs_lsp = (tcp->flags & UV_HANDLE_IPV6) ? uv_tcp_non_ifs_lsp_ipv6 :
+        uv_tcp_non_ifs_lsp_ipv4;
+
+      if (!non_ifs_lsp) {
+        /* 
+         * Shared socket with no non-IFS LSPs, request to cancel pending I/O.
+         * The socket will be closed inside endgame.
+         */
+        CancelIo((HANDLE)tcp->socket);
+        close_socket = 0;
+      }
     }
   }
 
